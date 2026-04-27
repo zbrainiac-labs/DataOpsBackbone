@@ -44,7 +44,7 @@ done
 echo "FAKE_RUN is set to: $FAKE_RUN"
 
 # --- Validation ---
-if [[ -z "$CLONE_SCHEMA" || -z "$CLONE_DATABASE" || -z "$RELEASE_NUM" || -z "$CONNECTION_NAME" || -z "$TEST_FILE" ]]; then
+if [[ -z "$CLONE_SCHEMA" || -z "$CLONE_DATABASE" || -z "$CONNECTION_NAME" || -z "$TEST_FILE" ]]; then
   echo "❌ Missing required arguments."
   exit 1
 fi
@@ -54,7 +54,11 @@ if [[ ! -f "$TEST_FILE" ]]; then
   exit 1
 fi
 
-CLONE_SCHEMA_WITH_RELEASE="${CLONE_SCHEMA}_${RELEASE_NUM}"
+if [[ -n "$RELEASE_NUM" && "$RELEASE_NUM" != "0" ]]; then
+  CLONE_SCHEMA_WITH_RELEASE="${CLONE_SCHEMA}_${RELEASE_NUM}"
+else
+  CLONE_SCHEMA_WITH_RELEASE="${CLONE_SCHEMA}"
+fi
 UTC_TIMESTAMP=$(date -u +"%Y-%m-%dT%H%M%SZ")
 TESTSUITE_NAME="${GITHUB_OWNER:-UnknownOwner}_${GITHUB_REPO:-UnknownRepo}_SQLValidation"
 echo "TESTSUITE_NAME: $TESTSUITE_NAME"
@@ -256,7 +260,7 @@ echo "REPORT_DIR: $REPORT_DIR"
 echo "JUNIT_REPORT_DIR: $JUNIT_REPORT_DIR"
 echo "Executing: java -Dunitth.report.dir=\"$REPORT_DIR\" -Dunitth.html.report.path=\"$REPORT_DIR\" -jar unitth.jar $JUNIT_REPORT_DIR/*"
 
-cd /usr/local/bin && java -Dunitth.report.dir="$REPORT_DIR" -jar unitth.jar "$JUNIT_REPORT_DIR"/*
+cd /usr/local/bin && java -Dunitth.report.dir="$REPORT_DIR" -jar unitth.jar "$JUNIT_REPORT_DIR"/* || echo "unitth report generation failed (non-critical)"
 
 # --- Exit with correct status ---
 [[ "$FAILED_TESTS" -eq 0 ]] && exit 0 || exit 1

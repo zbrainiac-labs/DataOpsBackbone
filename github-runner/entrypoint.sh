@@ -15,9 +15,22 @@ cd /home/docker/actions-runner || { echo "ERROR: Runner directory not found"; ex
 
 echo "🔧 Checking sql-report-vol ownership..."
 if [ -d /home/docker/sql-report-vol ]; then
-    sudo chown -R docker:docker /home/docker/sql-report-vol || echo "⚠️ Could not chown volume"
+    sudo chown -R docker:docker /home/docker/sql-report-vol || echo "Could not chown volume"
 else
-    echo "⚠️ Volume directory not found at runtime"
+    echo "Volume directory not found at runtime"
+fi
+
+if [[ -n "${SNOW_CONFIG_B64:-}" ]]; then
+    echo "Setting up Snowflake config..."
+    bash /usr/local/bin/github-runner_v1.sh
+fi
+
+if [[ -n "${SONAR_ADMIN_PASS:-}" ]]; then
+    echo "Auto-generating SonarQube token..."
+    bash /usr/local/bin/sonar-token-init.sh || echo "Sonar token init skipped"
+    if [[ -f "$HOME/.sonar_env" ]]; then
+        source "$HOME/.sonar_env"
+    fi
 fi
 # Clean up runner on termination
 cleanup() {

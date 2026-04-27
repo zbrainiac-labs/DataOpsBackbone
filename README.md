@@ -16,7 +16,7 @@ From a technological and operational perspective, automation, governance and con
 DataOpsBackbone addresses these issues by automating every critical step:
 
 **Quality Gates** leverage **SonarQube** code scans to enforce SQL and customisable coding rules based on regular expressions, which are applied automatically with every git push request. For example, forgetting to prefix a schema name or hardcoding a database name triggers an automated block and feedback, thereby enforcing standards before code can be shipped.
-- Releases are versioned and tested against zero-copy clones before being packaged through structured, traceable GitHub Actions workflows. This keeps production safe from changes that have not been properly tested.
+- Releases are versioned and deployed via DCM (Database Change Management) with plan/deploy semantics, then validated through SQL tests. This keeps production safe from changes that have not been properly tested.
 - Governance is built in: rules such as 'no grants to PUBLIC' or 'only UTC TIMESTAMP allowed' are continuously enforced, and all compliance-relevant data (such as SQL code scans and test results) is logged for auditing purposes.
 - Teams have full transparency and can be agile and reduce technical debt themselves. Automation enforces rules and monitors testing over time, so centralised approvals no longer become a bottleneck.
 
@@ -33,8 +33,8 @@ A DataOps pipeline that automates:
 
 - Syncing changes from GitHub
 - SQL linting & validation (SonarQube + regex rules)
-- Zero-copy Snowflake DB cloning
-- Building and testing releases
+- Declarative schema deployment via Snowflake DCM (Database Change Management)
+- SQL validation testing against deployed objects
 - Packaging deployable artifacts
 
 #### Overview of the infrastructure:
@@ -49,7 +49,7 @@ It combines:
 - **GitHub Actions** (with custom self-hosted runners)
 - **SonarQube** extended with SQL & Text plugins
 - **Docker Compose** for local stack orchestration
-- **Snowflake CLI** for deployment and zero-copy cloning
+- **Snowflake CLI** with DCM for declarative deployment (`DEFINE` syntax + Jinja templating)
 - **SQLUnit** for automated SQL testing
 
 ---
@@ -90,10 +90,54 @@ By isolating domains and versions, the impact of changes or failures in one area
 
 ![DataOps_SF_dep_rules.png](images/DataOps_SF_dep_rules.png)
 ---
+
+## Naming Convention
+
+All Snowflake object names use **UPPERCASE** with underscore separators.
+
+### Database: `{DOMAIN}_{ENV}`
+
+| Position | Field | Values |
+|----------|-------|--------|
+| 1-3 | Domain | 3-char business domain (`IOT`, `CLR`, `PAY`, `CRM`, `REF`) |
+| 4-7 | Environment | `_DEV`, `_TE1`, `_PER`, `_PRD` |
+
+Examples: `CLR_DEV`, `PAY_PRD`, `IOT_TE1`
+
+### Schema: `{DOMAIN}_{MATURITY}_v{NNN}`
+
+| Position | Field | Values |
+|----------|-------|--------|
+| 1-3 | Domain | Same 3-char domain code |
+| 4-8 | Maturity | `_RAW_`, `_CUR_`, `_AGG_`, `_GOL_` |
+| 9-12 | Version | `v001` -- `v999` |
+
+Examples: `CLR_RAW_v001`, `IOT_AGG_v012`, `REF_CUR_v003`
+
+### Database Objects (tables, views, stages, tasks, etc.): `{DOMAIN}{COMP}_{MATURITY}_{TYPE}_{TEXT}`
+
+| Position | Field | Description | Values |
+|----------|-------|-------------|--------|
+| 1-3 | Domain | 3-char business domain | `IOT`, `CLR`, `PAY`, `CRM`, `REF` |
+| 4 | Component | Sub-component (GitHub repo) | Single char: `I`, `A`, `T`, `P`, etc. |
+| 5-8 | Maturity | Data maturity level | `_RAW`, `_CUR`, `_AGG`, `_GOL` |
+| 9-12 | Object type | Snowflake object type | `_TB_`, `_VW_`, `_DT_`, `_ST_`, `_FF_`, `_SP_`, `_TK_` |
+| 13+ | Free text | Business-meaningful name | Uppercase, underscores allowed |
+
+Examples:
+- `ICGI_RAW_TB_SWIFT_MESSAGES` -- ICG domain, Ingestion repo, raw table
+- `ICGA_AGG_DT_SWIFT_PACS008` -- ICG domain, Aggregation repo, aggregated dynamic table
+- `IOTI_RAW_VW_SENSOR_GEOLOC` -- IOT domain, Ingestion repo, raw view
+- `ICGI_RAW_ST_SWIFT_INBOUND` -- ICG domain, Ingestion repo, raw stage
+- `ICGI_RAW_FF_XML` -- ICG domain, Ingestion repo, raw file format
+
+---
 ## SQL Linting Rules and Regex Patterns
 This list provides a few examples of SQL validation rules, each of which is paired with a regular expression (regex) that can be used to identify non-compliant code using the Community Text plugin of SonarQube.
 
-Backups of these rules, which can be restored as a Quality Profile, are available in the repository ([link](backup/2025-08-18_quality_profiles_text_plugin.xml)).
+Backups of these rules, which can be restored as a Quality Profile, are available in the repository ([link](backup/2026-04-27_quality_profiles_text_plugin.xml)). Rules are also auto-created at runner startup via `sonar-rules-setup.sh`.
+
+### Safety Rules
 
 #### 1. Disallow `CREATE SCHEMA` without `IF NOT EXISTS` or `REPLACE`
 ```regex
@@ -117,7 +161,7 @@ Backups of these rules, which can be restored as a Quality Profile, are availabl
 
 #### 5. Disallow dropping objects without IF EXISTS
 ```regex
-(?i)^\s*DROP\s+(SCHEMA|TABLE|VIEW)\s+(?!IF\s+EXISTS\b)
+(?i)^\s*DROP\s+(SCHEMA|TABLE|VIEW|DYNAMIC\s+TABLE|STAGE|FILE\s+FORMAT|PROCEDURE|FUNCTION|TASK)\s+(?!IF\s+EXISTS\b)
 ```
 
 #### 6. Disallow hardcoded USE DATABASE, USE SCHEMA, or USE ROLE statements
@@ -125,29 +169,128 @@ Backups of these rules, which can be restored as a Quality Profile, are availabl
 (?i)^(?!\s*--)\s*USE\s+(DATABASE|SCHEMA|ROLE)\b
 ```
 
-#### 7. Disallow usage of TIMESTAMP types other than TIMESTAMP_TZ
+### Data Type Rules
+
+#### 7. Disallow TIMESTAMP_NTZ and TIMESTAMP_LTZ (only TIMESTAMP_TZ allowed)
 ```regex
-(?i)(?<!--.*)\bTIMESTAMP(_NTZ|_LTZ)?(\s*\(\s*\d+\s*\))?\b
+(?i)(?<!--.*)\bTIMESTAMP_(NTZ|LTZ)(\s*\(\s*\d+\s*\))?\b
 ```
 
-#### 8. Schema names must have a prefix (RAW_, REF_, CON_, AGG_, DP_, DM_)
+### Naming Convention Rules
+
+#### 8. Schema names must follow `{DOMAIN}_{MATURITY}_` prefix pattern
 ```regex
-(?i)^(?!\s*--)\s*CREATE\s+(OR\s+REPLACE\s+)?SCHEMA\s+(IF\s+NOT\s+EXISTS\s+)?(?:[a-z0-9_]+\.)?(?!RAW_|REF_|CON_|AGG_|DP_|DM_)[a-z0-9_]+;
+(?i)^(?!\s*--)\s*CREATE\s+(OR\s+REPLACE\s+)?SCHEMA\s+(IF\s+NOT\s+EXISTS\s+)?(?:[a-z0-9_]+\.)?(?!RAW_|CUR_|AGG_|GOL_|REF_)[a-z0-9_]+;
 ```
 
-#### 9. (Dynamic) Table | Views names must begin with a 3-character alphanumeric component code followed by an underscore
+#### 9. Schema names must end with version pattern `_vNNN`
 ```regex
-(?i)^(?!\s*--)(?:\s*create(?:\s+or\s+replace)?|\s*alter)\s+(dynamic\s+)?table\s+(if\s+not\s+exists\s+)?(?:[A-Z0-9_]+\.){0,2}(?![A-Z0-9]{3}_)[A-Z_][A-Z0-9_]*
+(?i)^(?!\s*--)\s*CREATE\s+(OR\s+REPLACE\s+)?SCHEMA\s+(IF\s+NOT\s+EXISTS\s+)?(?:[a-z0-9_]+\.)?[a-z0-9_]+(?<!_v\d{3});
 ```
 
-#### 10. Disallow Cross-Database Dependencies
+#### 10. Table names must follow `{DOM}{COMP}_{MAT}_{TB}_` pattern
+```regex
+(?i)^(?!\s*--)\s*CREATE\s+(OR\s+REPLACE\s+)?TABLE\s+(IF\s+NOT\s+EXISTS\s+)?(?:[A-Z0-9_]+\.){0,2}(?![A-Z0-9]{3}[A-Z]_(RAW|CUR|AGG|GOL)_TB_)[A-Z_][A-Z0-9_]*
+```
+
+#### 11. View names must follow `{DOM}{COMP}_{MAT}_{VW}_` pattern
+```regex
+(?i)^(?!\s*--)\s*CREATE\s+(OR\s+REPLACE\s+)?VIEW\s+(?:[A-Z0-9_]+\.){0,2}(?![A-Z0-9]{3}[A-Z]_(RAW|CUR|AGG|GOL)_VW_)[A-Z_][A-Z0-9_]*
+```
+
+#### 12. Dynamic Table names must follow `{DOM}{COMP}_{MAT}_{DT}_` pattern
+```regex
+(?i)^(?!\s*--)\s*CREATE\s+(OR\s+REPLACE\s+)?DYNAMIC\s+TABLE\s+(?:[A-Z0-9_]+\.){0,2}(?![A-Z0-9]{3}[A-Z]_(RAW|CUR|AGG|GOL)_DT_)[A-Z_][A-Z0-9_]*
+```
+
+#### 13. Stage names must follow `{DOM}{COMP}_{MAT}_{ST}_` pattern
+```regex
+(?i)^(?!\s*--)\s*CREATE\s+(OR\s+REPLACE\s+)?STAGE\s+(?:[A-Z0-9_]+\.){0,2}(?![A-Z0-9]{3}[A-Z]_(RAW|CUR|AGG|GOL)_ST_)[A-Z_][A-Z0-9_]*
+```
+
+### Dependency Rules
+
+#### 14. Disallow Cross-Database Dependencies
 ```regex
 ^.*cross_db_true.*$
 ```
 
-#### 11. Disallow Cross-Schema Dependencies
+#### 15. Disallow Cross-Schema Dependencies
 ```regex
 ^.*cross_schema_true.*$
+```
+
+### Security & Access Control Rules
+
+#### 16. Disallow GRANT ALL PRIVILEGES
+```regex
+(?i)^(?!\s*--)\s*GRANT\s+ALL\s+(PRIVILEGES\s+)?ON\b
+```
+
+#### 17. Disallow ACCOUNTADMIN usage in SQL scripts
+```regex
+(?i)^(?!\s*--)\s*(USE\s+ROLE|SET\s+ROLE|GRANT\s+.*TO\s+ROLE|GRANT\s+ROLE)\s+.*\bACCOUNTADMIN\b
+```
+
+#### 18. Disallow plaintext passwords in DDL
+```regex
+(?i)^(?!\s*--)\s*.*PASSWORD\s*=\s*'[^']+'
+```
+
+### Data Quality & Consistency Rules
+
+#### 19. Disallow SELECT * (force explicit column lists)
+```regex
+(?i)^(?!\s*--)\s*SELECT\s+\*\s+FROM\b
+```
+
+#### 20. Disallow FLOAT/DOUBLE -- prefer NUMBER(p,s)
+```regex
+(?i)(?<!--.*)\b(FLOAT|DOUBLE|REAL)\b
+```
+
+#### 21. Disallow VARCHAR without explicit length
+```regex
+(?i)(?<!--.*)\bVARCHAR\s*[^(]
+```
+
+#### 22. CREATE TABLE must include COMMENT
+```regex
+(?i)^(?!\s*--)\s*CREATE\s+(OR\s+REPLACE\s+)?TABLE\s+(?!.*\bCOMMENT\b).*;\s*$
+```
+
+### Performance & Best Practice Rules
+
+#### 23. Disallow ORDER BY in view definitions
+```regex
+(?i)^(?!\s*--)\s*CREATE\s+(OR\s+REPLACE\s+)?VIEW\b[\s\S]*?\bORDER\s+BY\b
+```
+
+#### 24. Disallow COPY INTO without ON_ERROR clause
+```regex
+(?i)^(?!\s*--)\s*COPY\s+INTO\s+(?!.*\bON_ERROR\b).*;\s*$
+```
+
+#### 25. Dynamic Tables must specify TARGET_LAG
+```regex
+(?i)^(?!\s*--)\s*CREATE\s+(OR\s+REPLACE\s+)?DYNAMIC\s+TABLE\s+(?!.*\bTARGET_LAG\b)
+```
+
+### Naming Convention Rules (additional object types)
+
+#### 26. File Format names must follow `{DOM}{COMP}_{MAT}_FF_` pattern
+```regex
+(?i)^(?!\s*--)\s*CREATE\s+(OR\s+REPLACE\s+)?FILE\s+FORMAT\s+(?:[A-Z0-9_]+\.){0,2}(?![A-Z0-9]{3}[A-Z]_(RAW|CUR|AGG|GOL)_FF_)[A-Z_][A-Z0-9_]*
+```
+
+#### 27. Stored Procedure names must follow `{DOM}{COMP}_{MAT}_SP_` pattern
+```regex
+(?i)^(?!\s*--)\s*CREATE\s+(OR\s+REPLACE\s+)?PROCEDURE\s+(?:[A-Z0-9_]+\.){0,2}(?![A-Z0-9]{3}[A-Z]_(RAW|CUR|AGG|GOL)_SP_)[A-Z_][A-Z0-9_]*
+```
+
+#### 28. Task names must follow `{DOM}{COMP}_{MAT}_TK_` pattern
+```regex
+(?i)^(?!\s*--)\s*CREATE\s+(OR\s+REPLACE\s+)?TASK\s+(?:[A-Z0-9_]+\.){0,2}(?![A-Z0-9]{3}[A-Z]_(RAW|CUR|AGG|GOL)_TK_)[A-Z_][A-Z0-9_]*
 ```
 
 ## Monitoring
@@ -157,8 +300,8 @@ Backups of these rules, which can be restored as a Quality Profile, are availabl
 ### Issue within code
 ![Issue within code](images/sq_Issue_within_code.png)
 
-### Technical dept
-![Technical dept](images/sq_technical_dept.png)
+### Technical debt
+![Technical debt](images/sq_technical_dept.png)
 
 
 ### Monitor the history of test case execution
@@ -172,70 +315,56 @@ The [DataOps_init.sql](DataOps_init.sql) script creates all required database ob
 Simply log in to your Snowflake account and create all your objects at once.
 
 
-### Step 2: Snowflake Config
-
+### Step 2: Generate a PAT for the service user
 
 ```SQL
-ALTER USER IF EXISTS SVC_CICD ADD PAT CICD_PAT ROLE_RESTRICTION = 'ACCOUNTADMIN' DAYS_TO_EXPIRY = 30 COMMENT = 'New PAT for Snow CLI';
+ALTER USER IF EXISTS SVC_CICD ADD PROGRAMMATIC ACCESS TOKEN CICD_PAT
+  ROLE_RESTRICTION = CICD
+  DAYS_TO_EXPIRY = 365
+  COMMENT = 'CI/CD pipeline PAT';
 -- copy <your token>
-
-SHOW USER PATS FOR USER SVC_CICD;
 ```
 
-Create a snow cli config `~/.snowflake/config.toml`
-```toml
-[connections.sfseeurope-svc_cicd_user]
-account = "sfseeurope-demo_mdaeppen"
-user = "SVC_CICD"
-database = "DATAOPS"
-schema = "IOT_RAW_v001"
-warehouse = "MD_TEST_WH"
-authenticator = "snowflake"
-password = "<your token>"
-```
+### Step 3: Configure `.env` (single source of truth)
 
-Create a local `.env` for testing
+All configuration lives in one file. `start.sh` auto-generates `SNOW_CONFIG_B64` and the runner auto-generates `SONAR_TOKEN` at startup.
+
 ```dotenv
 # GitHub
 GH_RUNNER_TOKEN=<...>
-GITHUB_OWNER=<your GitRepo>
-GITHUB_REPO_1=<your Projects>
+GITHUB_OWNER=<your GitHub org/user>
+GITHUB_REPO_1=<your project>
 
-# SonarQube
-POSTGRES_USER=<...>
-POSTGRES_PASSWORD=<...>
-POSTGRES_DB=<...>
-SONAR_JDBC_USERNAME=<...>
-SONAR_JDBC_PASSWORD=<...>
+# SonarQube (SONAR_TOKEN is auto-generated at runner startup)
+POSTGRES_USER=sonar
+POSTGRES_PASSWORD=sonar
+POSTGRES_DB=sonarqube
+SONAR_JDBC_USERNAME=sonar
+SONAR_JDBC_PASSWORD=sonar
+SONAR_ADMIN_PASS=ThisIsNotSecure1234!
 
-# Snowflake
-CONNECTION_NAME=sfseeurope-svc_cicd
+# Snowflake (SNOW_CONFIG_B64 is auto-generated by start.sh)
+CONNECTION_NAME=<your-connection-name>
+SNOW_ACCOUNT=<your-account>
+SNOW_USER=SVC_CICD
+SNOW_ROLE=CICD
+SNOW_DATABASE=DATAOPS
+SNOW_SCHEMA=IOT_RAW_V001
+SNOW_WAREHOUSE=MD_TEST_WH
+SNOW_PAT=<your PAT from Step 2>
 ```
 
 ---
-### Step 3: Encode & Upload Secrets
+### Step 4: Upload GitHub Secret
+
+Only **one** secret is needed:
 
 ```bash
-base64 -b 0 -i ~/.snowflake/config.toml | tr -d '\n' > SNOW_CONFIG_B64
+./start.sh  # generates SNOW_CONFIG_B64 automatically
+gh secret set SNOW_CONFIG_B64 --repo <owner>/<repo> < SNOW_CONFIG_B64
 ```
 
-Upload the following secrets to GitHub repo:
-
-- `SNOW_CONFIG_B64`
-- `SONAR_TOKEN` (see below step 3.)
-
----
-### Step 4: Generate a SONAR_TOKEN (for user `ci_user`)
-
-1. Start your local stack via `./start.sh`
-2. Log in to SonarQube [http://localhost:9000](http://localhost:9000) as `admin`
-3. Go to **My Account** > **Security**
-4. Under **Generate Tokens**:
- - **Name** the token (e.g., `ci_user`)
- - **Type** of the token `global analysis token`
- - Click **Generate**
-5. Copy the token (you won’t see it again).
-6. Use as `SONAR_TOKEN` in your CI/CD pipeline.
+`SONAR_TOKEN` and `SNOW_CONNECTION_NAME` secrets are **no longer needed** -- they are auto-generated at runtime.
 
 ---
 
@@ -245,11 +374,11 @@ Upload the following secrets to GitHub repo:
 2. Access SonarQube at: [http://localhost:9000](http://localhost:9000)  
   **Login**: `admin` / `ThisIsNotSecure1234!` (default 'admin')
 3. Trigger your GitHub workflow
-4. Check results in sonarqube 
-5. monitor SQLUnit test results (incl. history) at: [http://localhost:8080](http://localhost:9080/index.html)
+4. Check results in sonarqube
+5. monitor SQLUnit test results (incl. history) at: [http://localhost:8080](http://localhost:8080)
 
 ---
 
 ## Final Thoughts
 
-This is not just a demo. It's a **reusable framework** to scale DataOps — combining validation, governance, and automation into one consistent, testable workflow.
+This is not just a demo. It's a **reusable framework** to scale DataOps -- combining validation, governance, and automation into one consistent, testable workflow.

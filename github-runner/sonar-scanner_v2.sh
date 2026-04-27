@@ -1,6 +1,10 @@
 #!/bin/bash
 set -e
 
+if [[ -z "${SONAR_TOKEN:-}" && -f "$HOME/.sonar_env" ]]; then
+  source "$HOME/.sonar_env"
+fi
+
 SONAR_TOKEN="${SONAR_TOKEN:?Missing SONAR_TOKEN}"
 PROJECT_KEY="${PROJECT_KEY:?Missing PROJECT_KEY}"
 SONAR_HOST="${SONAR_HOST:-http://sonarqube:9000}"
@@ -31,10 +35,18 @@ else
 fi
 
 # Run sonar-scanner
+if [[ -f /.dockerenv ]] || grep -qE '/docker/|/lxc/' /proc/1/cgroup 2>/dev/null; then
+  PROJECT_BASE_DIR="/home/docker/actions-runner/_work/$PROJECT_KEY/$PROJECT_KEY"
+elif [[ "$(uname)" == "Darwin" ]]; then
+  PROJECT_BASE_DIR="${BASE_WORKSPACE:-$HOME/workspace}/$PROJECT_KEY"
+else
+  PROJECT_BASE_DIR="$(pwd)"
+fi
+
 echo "Running sonar-scanner..."
 "$SONAR_SCANNER" \
   -Dsonar.projectKey="$PROJECT_KEY" \
-  -Dsonar.projectBaseDir="/home/docker/actions-runner/_work/$PROJECT_KEY/$PROJECT_KEY" \
+  -Dsonar.projectBaseDir="$PROJECT_BASE_DIR" \
   -Dsonar.host.url="$SONAR_HOST" \
   -Dsonar.scm.disabled=true \
   -Dsonar.language=sql \

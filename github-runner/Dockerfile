@@ -1,5 +1,5 @@
 # Base image
-FROM eclipse-temurin:17-jre-jammy
+FROM eclipse-temurin:21-jre-jammy
 
 # Set build arguments
 ARG TARGETARCH
@@ -12,7 +12,7 @@ RUN echo "🐳 Building for architecture: ${TARGETARCH}" && \
 
 # Install required packages
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    unzip zip curl openjdk-17-jre python3 python3-pip python3-dev \
+    unzip zip curl openjdk-21-jre python3 python3-pip python3-dev \
     build-essential git jq ca-certificates libffi-dev libssl-dev file \
     dumb-init sudo && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
@@ -50,7 +50,7 @@ RUN set -eux; \
 RUN echo "docker ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
 # Install Snowflake CLI
-RUN pip install --no-cache-dir snowflake-cli-labs
+RUN pip install --no-cache-dir snowflake-cli
 
 # Set environment PATH
 ENV PATH="/usr/local/sonar-scanner/bin:/usr/local/bin:${PATH}"

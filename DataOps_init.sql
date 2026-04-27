@@ -1,4 +1,4 @@
-OPERATIONS.PAY_RAW_V001.PAY_RAW_JOIN_SENSOR_GEOLOCUSE ROLE ACCOUNTADMIN;
+USE ROLE ACCOUNTADMIN;
 DROP DATABASE IF EXISTS DATAOPS;
 CREATE DATABASE IF NOT EXISTS DATAOPS;
 USE DATABASE DATAOPS;
@@ -9,9 +9,11 @@ CREATE SCHEMA IF NOT EXISTS IOT_RAW_v001;
 DROP SCHEMA IF EXISTS IOT_AGG_v001;
 CREATE SCHEMA IF NOT EXISTS IOT_AGG_v001;
 
+DROP SCHEMA IF EXISTS IOT_DAP_v001;
+CREATE SCHEMA IF NOT EXISTS IOT_DAP_v001;
+
 DROP SCHEMA IF EXISTS REF_RAW_v001;
 CREATE SCHEMA IF NOT EXISTS REF_RAW_v001;
-
 
 CREATE ROLE IF NOT EXISTS CICD;
 
@@ -19,20 +21,39 @@ CREATE ROLE IF NOT EXISTS CICD;
 GRANT USAGE ON DATABASE DATAOPS TO ROLE CICD;
 GRANT CREATE SCHEMA ON DATABASE DATAOPS TO ROLE CICD;
 GRANT USAGE ON WAREHOUSE MD_TEST_WH TO ROLE CICD;
+GRANT CREATE WAREHOUSE ON ACCOUNT TO ROLE CICD;
+GRANT MANAGE WAREHOUSES ON ACCOUNT TO ROLE CICD;
+GRANT CREATE SHARE ON ACCOUNT TO ROLE CICD;
+GRANT CREATE LISTING ON ACCOUNT TO ROLE CICD;
 
 -- Schema-level privileges
 GRANT ALL PRIVILEGES ON SCHEMA DATAOPS.IOT_RAW_v001 TO ROLE CICD;
 GRANT ALL PRIVILEGES ON SCHEMA DATAOPS.IOT_AGG_v001 TO ROLE CICD;
+GRANT ALL PRIVILEGES ON SCHEMA DATAOPS.IOT_DAP_v001 TO ROLE CICD;
 GRANT ALL PRIVILEGES ON SCHEMA DATAOPS.REF_RAW_v001 TO ROLE CICD;
 
 -- Future grants
 GRANT ALL PRIVILEGES ON FUTURE SCHEMAS IN DATABASE DATAOPS TO ROLE CICD;
 GRANT SELECT, INSERT, UPDATE, DELETE ON FUTURE TABLES IN SCHEMA DATAOPS.IOT_RAW_v001 TO ROLE CICD;
 GRANT SELECT, INSERT, UPDATE, DELETE ON FUTURE TABLES IN SCHEMA DATAOPS.IOT_AGG_v001 TO ROLE CICD;
+GRANT SELECT, INSERT, UPDATE, DELETE ON FUTURE TABLES IN SCHEMA DATAOPS.IOT_DAP_v001 TO ROLE CICD;
 GRANT SELECT, INSERT, UPDATE, DELETE ON FUTURE TABLES IN SCHEMA DATAOPS.REF_RAW_v001 TO ROLE CICD;
 
 -- SNOWFLAKE access
 GRANT IMPORTED PRIVILEGES ON DATABASE SNOWFLAKE TO ROLE CICD;
+--GRANT CREATE ORGANIZATION LISTING IN
+-- TODO -- GRANT CREATE ORGANIZATION LISTING TO ROLE CICD;
+
+-- Create Resource Monitor for Budget Control (100 credits/month)
+CREATE OR REPLACE RESOURCE MONITOR finops_budget_monitor
+WITH
+    CREDIT_QUOTA = 100,                  -- Monthly limit of 100 credits
+    FREQUENCY = 'MONTHLY',               -- Reset quota monthly
+    START_TIMESTAMP = IMMEDIATELY
+    TRIGGERS 
+        ON 75 PERCENT DO NOTIFY          -- Notify at 75% usage
+        ON 90 PERCENT DO SUSPEND         -- Suspend warehouse at 90% usage
+        ON 100 PERCENT DO SUSPEND_IMMEDIATE; -- Immediately suspend at 100% usage
 
 -- User setup
 GRANT ROLE CICD TO USER SVC_CICD;
@@ -358,20 +379,20 @@ CREATE OR REPLACE FILE FORMAT XML_FILE_FORMAT
   STRIP_OUTER_ELEMENT = TRUE;  -- optional, keeps the XML cleaner
 
 CREATE OR REPLACE STAGE ICG_RAW_SWIFT_INBOUND
-  FILE_FORMAT = (
-    TYPE = 'XML'
+  FILE_FORMAT = ( 
+    TYPE = 'XML' 
   )
   COMMENT = 'Inbound staging area for raw SWIFT ISO20022 XML messages (pacs.008, pacs.002, etc.)';
 
 CREATE OR REPLACE STAGE ICG_RAW_SWIFT_INBOUND_DEV
-  FILE_FORMAT = (
-    TYPE = 'XML'
+  FILE_FORMAT = ( 
+    TYPE = 'XML' 
   )
   COMMENT = 'Inbound staging area for raw SWIFT ISO20022 XML messages (pacs.008, pacs.002, etc.)';
 
 CREATE OR REPLACE TABLE ICG_RAW_SWIFT_MESSAGES (
     FILE_NAME   STRING,
-    LOAD_TS     TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP,
+    LOAD_TS     TIMESTAMP_TZ DEFAULT CURRENT_TIMESTAMP,
     RAW_XML     VARIANT
 );
 
@@ -384,48 +405,49 @@ CREATE OR REPLACE DYNAMIC TABLE ICG_AGG_SWIFT_PACS008
 TARGET_LAG = '60 minutes'
 WAREHOUSE = MD_TEST_WH
 AS
-SELECT
+SELECT 
     -- Source metadata
     FILE_NAME as source_filename,
     LOAD_TS as source_load_timestamp,
-
+    
     -- Group Header Information
     GET_PATH(PARSE_XML(RAW_XML::STRING), '$[0]."$"[0]."$"')::STRING AS message_id,
-    GET_PATH(PARSE_XML(RAW_XML::STRING), '$[0]."$"[1]."$"')::STRING AS creation_datetime,
-    GET_PATH(PARSE_XML(RAW_XML::STRING), '$[0]."$"[2]."$"')::INTEGER AS number_of_transactions,
+    TRY_CAST(GET_PATH(PARSE_XML(RAW_XML::STRING), '$[0]."$"[1]."$"')::STRING AS TIMESTAMP_TZ) AS creation_datetime,
 
+    GET_PATH(PARSE_XML(RAW_XML::STRING), '$[0]."$"[2]."$"')::INTEGER AS number_of_transactions,
+    
     -- Group Header Settlement Information
     GET_PATH(PARSE_XML(RAW_XML::STRING), '$[0]."$"[3]."@Ccy"')::STRING AS group_settlement_currency,
     GET_PATH(PARSE_XML(RAW_XML::STRING), '$[0]."$"[3]."$"')::DECIMAL(18,2) AS group_settlement_amount,
-
+    
     -- Settlement Information
     GET_PATH(PARSE_XML(RAW_XML::STRING), '$[0]."$"[4]."$"[0]."$"')::STRING AS settlement_method,
     GET_PATH(PARSE_XML(RAW_XML::STRING), '$[0]."$"[4]."$"[1]."$"."$"')::STRING AS clearing_system_code,
-
+    
     -- Payment Identification
     GET_PATH(PARSE_XML(RAW_XML::STRING), '$[1]."$"[0]."$"[0]."$"')::STRING AS instruction_id,
     GET_PATH(PARSE_XML(RAW_XML::STRING), '$[1]."$"[0]."$"[1]."$"')::STRING AS end_to_end_id,
     GET_PATH(PARSE_XML(RAW_XML::STRING), '$[1]."$"[0]."$"[2]."$"')::STRING AS transaction_id,
-
+    
     -- Payment Type Information
     GET_PATH(PARSE_XML(RAW_XML::STRING), '$[1]."$"[1]."$"[0]."$"')::STRING AS instruction_priority,
     GET_PATH(PARSE_XML(RAW_XML::STRING), '$[1]."$"[1]."$"[1]."$"."$"')::STRING AS service_level_code,
     GET_PATH(PARSE_XML(RAW_XML::STRING), '$[1]."$"[1]."$"[2]."$"."$"')::STRING AS local_instrument_code,
-
+    
     -- Transaction Amount
     GET_PATH(PARSE_XML(RAW_XML::STRING), '$[1]."$"[2]."@Ccy"')::STRING AS transaction_currency,
     GET_PATH(PARSE_XML(RAW_XML::STRING), '$[1]."$"[2]."$"')::DECIMAL(18,2) AS transaction_amount,
-
+    
     -- Settlement Date and Charges
     GET_PATH(PARSE_XML(RAW_XML::STRING), '$[1]."$"[3]."$"')::DATE AS interbank_settlement_date,
     GET_PATH(PARSE_XML(RAW_XML::STRING), '$[1]."$"[4]."$"')::STRING AS charges_bearer,
-
+    
     -- Agent Information
     GET_PATH(PARSE_XML(RAW_XML::STRING), '$[1]."$"[5]."$"."$"."$"')::STRING AS instructing_agent_bic,
     GET_PATH(PARSE_XML(RAW_XML::STRING), '$[1]."$"[6]."$"."$"."$"')::STRING AS instructed_agent_bic,
     GET_PATH(PARSE_XML(RAW_XML::STRING), '$[1]."$"[7]."$"."$"."$"')::STRING AS debtor_agent_bic,
     GET_PATH(PARSE_XML(RAW_XML::STRING), '$[1]."$"[8]."$"."$"."$"')::STRING AS creditor_agent_bic,
-
+    
     -- Debtor Information
     GET_PATH(PARSE_XML(RAW_XML::STRING), '$[1]."$"[9]."$"[0]."$"')::STRING AS debtor_name,
     GET_PATH(PARSE_XML(RAW_XML::STRING), '$[1]."$"[9]."$"[1]."$"[0]."$"')::STRING AS debtor_street,
@@ -433,7 +455,7 @@ SELECT
     GET_PATH(PARSE_XML(RAW_XML::STRING), '$[1]."$"[9]."$"[1]."$"[2]."$"')::STRING AS debtor_city,
     GET_PATH(PARSE_XML(RAW_XML::STRING), '$[1]."$"[9]."$"[1]."$"[3]."$"')::STRING AS debtor_country,
     GET_PATH(PARSE_XML(RAW_XML::STRING), '$[1]."$"[10]."$"."$"."$"')::STRING AS debtor_iban,
-
+    
     -- Creditor Information
     GET_PATH(PARSE_XML(RAW_XML::STRING), '$[1]."$"[11]."$"[0]."$"')::STRING AS creditor_name,
     GET_PATH(PARSE_XML(RAW_XML::STRING), '$[1]."$"[11]."$"[1]."$"[0]."$"')::STRING AS creditor_street,
@@ -441,33 +463,33 @@ SELECT
     GET_PATH(PARSE_XML(RAW_XML::STRING), '$[1]."$"[11]."$"[1]."$"[2]."$"')::STRING AS creditor_city,
     GET_PATH(PARSE_XML(RAW_XML::STRING), '$[1]."$"[11]."$"[1]."$"[3]."$"')::STRING AS creditor_country,
     GET_PATH(PARSE_XML(RAW_XML::STRING), '$[1]."$"[12]."$"."$"."$"')::STRING AS creditor_iban,
-
+    
     -- Remittance Information
     GET_PATH(PARSE_XML(RAW_XML::STRING), '$[1]."$"[13]."$"."$"')::STRING AS remittance_information,
-
+    
     -- Analytics Fields
-    CASE
+    CASE 
         WHEN GET_PATH(PARSE_XML(RAW_XML::STRING), '$[1]."$"[2]."$"')::DECIMAL(18,2) >= 100000 THEN TRUE
         ELSE FALSE
     END AS is_high_value_payment,
-
-    CASE
+    
+    CASE 
         WHEN GET_PATH(PARSE_XML(RAW_XML::STRING), '$[0]."$"[4]."$"[1]."$"."$"')::STRING = 'TARGET2' THEN TRUE
         ELSE FALSE
     END AS is_target2_payment,
-
+    
     CONCAT(
         COALESCE(GET_PATH(PARSE_XML(RAW_XML::STRING), '$[1]."$"[9]."$"[1]."$"[3]."$"')::STRING, 'UNKNOWN'),
         ' -> ',
         COALESCE(GET_PATH(PARSE_XML(RAW_XML::STRING), '$[1]."$"[11]."$"[1]."$"[3]."$"')::STRING, 'UNKNOWN')
     ) AS payment_corridor,
-
-    CASE
-        WHEN GET_PATH(PARSE_XML(RAW_XML::STRING), '$[1]."$"[9]."$"[1]."$"[3]."$"')::STRING =
+    
+    CASE 
+        WHEN GET_PATH(PARSE_XML(RAW_XML::STRING), '$[1]."$"[9]."$"[1]."$"[3]."$"')::STRING = 
              GET_PATH(PARSE_XML(RAW_XML::STRING), '$[1]."$"[11]."$"[1]."$"[3]."$"')::STRING THEN 'DOMESTIC'
         ELSE 'CROSS_BORDER'
     END AS payment_type_classification,
-
+    
     -- Processing metadata
     CURRENT_TIMESTAMP() AS parsed_at,
     LENGTH(RAW_XML::STRING) AS xml_size_bytes
@@ -481,38 +503,41 @@ CREATE OR REPLACE DYNAMIC TABLE ICG_AGG_SWIFT_PACS002
 TARGET_LAG = '60 minutes'
 WAREHOUSE = MD_TEST_WH
 AS
-SELECT
+SELECT 
     -- Source metadata
     FILE_NAME as source_filename,
     LOAD_TS as source_load_timestamp,
-
+    
     -- Group Header Information (array index 0)
     GET_PATH(PARSE_XML(RAW_XML::STRING), '$[0]."$"[0]."$"')::STRING AS message_id,
-    GET_PATH(PARSE_XML(RAW_XML::STRING), '$[0]."$"[1]."$"')::STRING AS creation_datetime,
+    TRY_CAST(GET_PATH(PARSE_XML(RAW_XML::STRING), '$[0]."$"[1]."$"')::STRING AS TIMESTAMP_TZ) AS creation_datetime, -- <CreDtTm>
 
+    
     -- Agent Information from Group Header
     GET_PATH(PARSE_XML(RAW_XML::STRING), '$[0]."$"[2]."$"."$"."$"')::STRING AS instructing_agent_bic,
     GET_PATH(PARSE_XML(RAW_XML::STRING), '$[0]."$"[3]."$"."$"."$"')::STRING AS instructed_agent_bic,
-
+    
     -- Original Group Information and Status (array index 1)
     GET_PATH(PARSE_XML(RAW_XML::STRING), '$[1]."$"[0]."$"')::STRING AS original_message_id,
     GET_PATH(PARSE_XML(RAW_XML::STRING), '$[1]."$"[1]."$"')::STRING AS original_message_name_id,
-    GET_PATH(PARSE_XML(RAW_XML::STRING), '$[1]."$"[2]."$"')::STRING AS group_status,
-
+    TRY_CAST(GET_PATH(PARSE_XML(RAW_XML::STRING), '$[1]."$"[2]."$"')::STRING AS TIMESTAMP_TZ) AS original_creation_datetime, -- <OrgnlCreDtTm>
+    
+    GET_PATH(PARSE_XML(RAW_XML::STRING), '$[1]."$"[3]."$"')::STRING AS group_status,
+    
     -- Transaction Information and Status (array index 2)
     GET_PATH(PARSE_XML(RAW_XML::STRING), '$[2]."$"[0]."$"')::STRING AS original_end_to_end_id,
     GET_PATH(PARSE_XML(RAW_XML::STRING), '$[2]."$"[1]."$"')::STRING AS transaction_status,
-
+    
     -- Status Reason Information
     GET_PATH(PARSE_XML(RAW_XML::STRING), '$[2]."$"[2]."$"."$"')::STRING AS status_reason,
-
+    
     -- Additional fields that might be present (with safe extraction)
     TRY_CAST(GET_PATH(PARSE_XML(RAW_XML::STRING), '$[2]."$"[3]."$"')::STRING AS STRING) AS original_instruction_id,
     TRY_CAST(GET_PATH(PARSE_XML(RAW_XML::STRING), '$[2]."$"[4]."$"')::STRING AS STRING) AS original_transaction_id,
-    TRY_CAST(GET_PATH(PARSE_XML(RAW_XML::STRING), '$[2]."$"[5]."$"')::STRING AS TIMESTAMP_NTZ) AS acceptance_datetime,
-
+    TRY_CAST(GET_PATH(PARSE_XML(RAW_XML::STRING), '$[2]."$"[5]."$"')::STRING AS TIMESTAMP_TZ) AS acceptance_datetime,
+    
     -- Derived Analytics Fields
-    CASE
+    CASE 
         WHEN GET_PATH(PARSE_XML(RAW_XML::STRING), '$[2]."$"[1]."$"')::STRING = 'ACCP' THEN 'ACCEPTED'
         WHEN GET_PATH(PARSE_XML(RAW_XML::STRING), '$[2]."$"[1]."$"')::STRING = 'RJCT' THEN 'REJECTED'
         WHEN GET_PATH(PARSE_XML(RAW_XML::STRING), '$[2]."$"[1]."$"')::STRING = 'PDNG' THEN 'PENDING'
@@ -520,38 +545,38 @@ SELECT
         WHEN GET_PATH(PARSE_XML(RAW_XML::STRING), '$[2]."$"[1]."$"')::STRING = 'ACSP' THEN 'ACCEPTED_SETTLEMENT_IN_PROCESS'
         ELSE GET_PATH(PARSE_XML(RAW_XML::STRING), '$[2]."$"[1]."$"')::STRING
     END AS transaction_status_description,
-
-    CASE
-        WHEN GET_PATH(PARSE_XML(RAW_XML::STRING), '$[1]."$"[2]."$"')::STRING = 'ACCP' THEN 'ACCEPTED'
-        WHEN GET_PATH(PARSE_XML(RAW_XML::STRING), '$[1]."$"[2]."$"')::STRING = 'RJCT' THEN 'REJECTED'
-        WHEN GET_PATH(PARSE_XML(RAW_XML::STRING), '$[1]."$"[2]."$"')::STRING = 'PDNG' THEN 'PENDING'
-        ELSE GET_PATH(PARSE_XML(RAW_XML::STRING), '$[1]."$"[2]."$"')::STRING
+    
+    CASE 
+        WHEN GET_PATH(PARSE_XML(RAW_XML::STRING), '$[1]."$"[3]."$"')::STRING = 'ACCP' THEN 'ACCEPTED'
+        WHEN GET_PATH(PARSE_XML(RAW_XML::STRING), '$[1]."$"[3]."$"')::STRING = 'RJCT' THEN 'REJECTED'
+        WHEN GET_PATH(PARSE_XML(RAW_XML::STRING), '$[1]."$"[3]."$"')::STRING = 'PDNG' THEN 'PENDING'
+        ELSE GET_PATH(PARSE_XML(RAW_XML::STRING), '$[1]."$"[3]."$"')::STRING
     END AS group_status_description,
-
+    
     -- Check if this is a positive or negative response
-    CASE
+    CASE 
         WHEN GET_PATH(PARSE_XML(RAW_XML::STRING), '$[2]."$"[1]."$"')::STRING IN ('ACCP', 'ACSC', 'ACSP') THEN TRUE
         ELSE FALSE
     END AS is_positive_response,
-
-    CASE
+    
+    CASE 
         WHEN GET_PATH(PARSE_XML(RAW_XML::STRING), '$[2]."$"[1]."$"')::STRING = 'RJCT' THEN TRUE
         ELSE FALSE
     END AS is_rejection,
-
+    
     -- Check if this is related to PACS.008
-    CASE
+    CASE 
         WHEN GET_PATH(PARSE_XML(RAW_XML::STRING), '$[1]."$"[1]."$"')::STRING = 'pacs.008.001.08' THEN TRUE
         ELSE FALSE
     END AS is_pacs008_response,
-
+    
     -- Extract date from original message ID for correlation
-    CASE
+    CASE 
         WHEN GET_PATH(PARSE_XML(RAW_XML::STRING), '$[1]."$"[0]."$"')::STRING LIKE '20%-%-%' THEN
             SUBSTR(GET_PATH(PARSE_XML(RAW_XML::STRING), '$[1]."$"[0]."$"')::STRING, 1, 8)
         ELSE NULL
     END AS original_message_date,
-
+    
     -- Processing metadata
     CURRENT_TIMESTAMP() AS parsed_at,
     LENGTH(RAW_XML::STRING) AS xml_size_bytes
@@ -559,6 +584,7 @@ SELECT
 FROM CLR_RAW_v001.ICG_RAW_SWIFT_MESSAGES
 WHERE RAW_XML IS NOT NULL
   AND (FILE_NAME ILIKE '%pacs002%' OR RAW_XML::STRING ILIKE '%FIToFIPmtStsRpt%');
+
 
 
 ---
@@ -573,11 +599,11 @@ SELECT
     -- Join keys
     p008.message_id                AS pacs008_message_id,
     p002.original_message_id       AS pacs002_original_message_id,
-
+    
     -- Transaction-level correlation
     p008.end_to_end_id             AS pacs008_end_to_end_id,
     p002.original_end_to_end_id    AS pacs002_original_end_to_end_id,
-
+    
     -- Status from pacs.002
     p002.transaction_status,
     p002.transaction_status_description,
@@ -586,7 +612,7 @@ SELECT
     p002.status_reason,
     p002.is_rejection,
     p002.is_positive_response,
-
+    
     -- Payment details from pacs.008
     p008.transaction_currency,
     p008.transaction_amount,
@@ -596,14 +622,15 @@ SELECT
     p008.payment_type_classification,
     p008.is_high_value_payment,
     p008.is_target2_payment,
-
+    
     -- Metadata
     p008.source_filename   AS pacs008_file,
     p002.source_filename   AS pacs002_file,
     p008.source_load_timestamp AS pacs008_load_timestamp,
     p002.source_load_timestamp AS pacs002_load_timestamp,
+    DATEDIFF('minutes', p002.ORIGINAL_CREATION_DATETIME, p002.CREATION_DATETIME) AS ack_time,
     CURRENT_TIMESTAMP() AS joined_at
-
+    
 FROM CLR_AGG_v001.ICG_AGG_SWIFT_PACS008 p008
 LEFT JOIN CLR_AGG_v001.ICG_AGG_SWIFT_PACS002 p002
     ON p002.original_message_id = p008.message_id
