@@ -30,14 +30,14 @@ The **canonical step order** used by all repos:
 
 | Step | MOAP | project-one | crm_dcm | MDM | sharing |
 |------|------|-------------|---------|-----|---------|
-| DCM Deploy | Before Sonar (step 7) | Before Sonar (step 7) | Before Sonar (step 7) | Before Sonar (step 7) | **After** Quality Gate |
-| Extract deps | After DCM (step 8) | After DCM (step 8) | After DCM (step 8) | After DCM (step 8) | After DCM |
+| DCM Deploy | Before Sonar (step 7) | Before Sonar (step 7) | Before Sonar (step 7) | Before Sonar (step 7) | Before Sonar (step 7) |
+| Extract deps | After DCM (step 8) | After DCM (step 8) | After DCM (step 8) | After DCM (step 8) | After DCM (step 8) |
 | Quality Gate | continue-on-error: true | continue-on-error: true | continue-on-error: true | continue-on-error: true | continue-on-error: true |
 | Clone schema | Present | Present | Present | Present | Present |
 | Drop cloned schema | Present (if: always) | Present (if: always) | Present (if: always) | Present (if: always) | Present (if: always) |
 | SQLUnit --RELEASE_NUM | Present | Present | Present | Present | Present |
 
-**Note:** `sharing_any_objects` runs Sonar **before** DCM (minor ordering difference). All others run DCM first.
+All 5 repos follow identical step order: DCM Deploy -> Extract Deps -> Sonar Scanner -> Quality Gate (continue-on-error).
 
 ---
 
