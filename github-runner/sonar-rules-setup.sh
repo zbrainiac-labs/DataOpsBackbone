@@ -59,6 +59,10 @@ create_rule "Disallow_ACCOUNTADMIN_in_scripts" "Disallow ACCOUNTADMIN usage in S
 create_rule "Disallow_plaintext_passwords" "Disallow plaintext passwords in DDL" "Security risk. Passwords must not be hardcoded in SQL scripts." "(?i)^(?!\s*--)\s*.*PASSWORD\s*=\s*'[^']+'" "BLOCKER"
 
 echo ""
+echo "=== Data Type ==="
+create_rule "Disallow_usage_of_TIMESTAMP_types_other_than_TIMESTAMP_TZ" "Disallow TIMESTAMP_NTZ and TIMESTAMP_LTZ (only TIMESTAMP_TZ allowed)" "Use TIMESTAMP_TZ for timezone-aware timestamps. TIMESTAMP_NTZ and TIMESTAMP_LTZ cause ambiguity." '(?i)(?<!--.*)\bTIMESTAMP_(NTZ|LTZ)(\s*\(\s*\d+\s*\))?\b' "MAJOR"
+
+echo ""
 echo "=== Data Quality & Consistency ==="
 create_rule "Disallow_SELECT_star" "Disallow SELECT * (force explicit column lists)" "Explicit column lists prevent breakage when schema changes." '(?i)^(?!\s*--)\s*SELECT\s+\*\s+FROM\b' "MINOR"
 create_rule "Disallow_FLOAT_DOUBLE" "Disallow FLOAT/DOUBLE -- prefer NUMBER(p,s)" "FLOAT has precision issues. Use NUMBER(precision, scale) for deterministic results." '(?i)(?<!--.*)\b(FLOAT|DOUBLE|REAL)\b' "MINOR"
@@ -78,7 +82,7 @@ create_rule "Schema_must_have_version_suffix" "Schema names must end with _vNNN 
 
 echo ""
 echo "=== Naming Convention - Objects ==="
-create_rule "Table_name_pattern" "Table names must follow DOM+COMP_MAT_TB_ pattern" "Pattern: {3-char domain}{1-char component}_{RAW|CUR|AGG|GOL}_TB_{name}" '(?i)^(?!\s*--)\s*CREATE\s+(OR\s+REPLACE\s+)?TABLE\s+(IF\s+NOT\s+EXISTS\s+)?(?:[A-Z0-9_]+\.){0,2}(?![A-Z0-9]{3}[A-Z]_(RAW|CUR|AGG|GOL)_TB_)[A-Z_][A-Z0-9_]*' "MAJOR"
+create_rule "Table_name_pattern" "Table names must follow DOM+COMP_MAT_TB_ pattern" "Pattern: {3-char domain}{1-char component}_{RAW|CUR|AGG|GOL}_TB_{name}" '(?i)^(?!\s*--)\s*CREATE\s+(OR\s+REPLACE\s+)?(?!DYNAMIC\s)TABLE\s+(IF\s+NOT\s+EXISTS\s+)?(?:[A-Z0-9_]+\.){0,2}(?![A-Z0-9]{3}[A-Z]_(RAW|CUR|AGG|GOL)_TB_)[A-Z_][A-Z0-9_]*' "MAJOR"
 create_rule "View_name_pattern" "View names must follow DOM+COMP_MAT_VW_ pattern" "Pattern: {3-char domain}{1-char component}_{RAW|CUR|AGG|GOL}_VW_{name}" '(?i)^(?!\s*--)\s*CREATE\s+(OR\s+REPLACE\s+)?VIEW\s+(?:[A-Z0-9_]+\.){0,2}(?![A-Z0-9]{3}[A-Z]_(RAW|CUR|AGG|GOL)_VW_)[A-Z_][A-Z0-9_]*' "MAJOR"
 create_rule "Dynamic_Table_name_pattern" "Dynamic Table names must follow DOM+COMP_MAT_DT_ pattern" "Pattern: {3-char domain}{1-char component}_{RAW|CUR|AGG|GOL}_DT_{name}" '(?i)^(?!\s*--)\s*CREATE\s+(OR\s+REPLACE\s+)?DYNAMIC\s+TABLE\s+(?:[A-Z0-9_]+\.){0,2}(?![A-Z0-9]{3}[A-Z]_(RAW|CUR|AGG|GOL)_DT_)[A-Z_][A-Z0-9_]*' "MAJOR"
 create_rule "Stage_name_pattern" "Stage names must follow DOM+COMP_MAT_ST_ pattern" "Pattern: {3-char domain}{1-char component}_{RAW|CUR|AGG|GOL}_ST_{name}" '(?i)^(?!\s*--)\s*CREATE\s+(OR\s+REPLACE\s+)?STAGE\s+(?:[A-Z0-9_]+\.){0,2}(?![A-Z0-9]{3}[A-Z]_(RAW|CUR|AGG|GOL)_ST_)[A-Z_][A-Z0-9_]*' "MAJOR"

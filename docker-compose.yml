@@ -60,49 +60,28 @@ services:
     networks:
       - sonarnet
 
-  runner1:
+  runner3:
     <<: *runner-base
-    container_name: github-runner-${GITHUB_REPO_1}
+    container_name: github-runner-org-${GITHUB_ORG}
     depends_on:
       sonarqube:
         condition: service_healthy
     environment:
       <<: *runner-env
-      REPO_URL: https://github.com/${GITHUB_OWNER}/${GITHUB_REPO_1}
-      RUNNER_NAME: runner-${GITHUB_REPO_1}
-      RUNNER_WORKDIR: /_work/runner-${GITHUB_REPO_1}
-      GITHUB_REPO: ${GITHUB_REPO_1}
-      LABELS: runner-${GITHUB_REPO_1}
-      PROJECT_KEY: ${GITHUB_REPO_1}
+      RUNNER_SCOPE: org
+      GITHUB_OWNER: ${GITHUB_ORG}
+      ACCESS_TOKEN: ${GH_ORG_TOKEN}
+      RUNNER_NAME: runner-org-${GITHUB_ORG}
+      RUNNER_WORKDIR: /_work/runner-org-${GITHUB_ORG}
+      GITHUB_REPO: ""
+      LABELS: runner-org-${GITHUB_ORG}
+      PROJECT_KEY: org-${GITHUB_ORG}
       DISABLE_AUTOMATIC_DEREGISTRATION: "true"
-      CONFIGURED_ACTIONS_RUNNER_FILES_DIR: /actions-runner-config/${GITHUB_REPO_1}
+      CONFIGURED_ACTIONS_RUNNER_FILES_DIR: /actions-runner-config/org-${GITHUB_ORG}
       UNSET_CONFIG_VARS: "true"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - runner_config:/actions-runner-config/${GITHUB_REPO_1}
-      - sql_unit_report:/home/docker/sql-report-vol
-      - ./sql-unit-reports:/home/docker/sql-unit-reports
-
-  runner2:
-    <<: *runner-base
-    container_name: github-runner-${GITHUB_REPO_2}
-    depends_on:
-      sonarqube:
-        condition: service_healthy
-    environment:
-      <<: *runner-env
-      REPO_URL: https://github.com/${GITHUB_OWNER}/${GITHUB_REPO_2}
-      RUNNER_NAME: runner-${GITHUB_REPO_2}
-      RUNNER_WORKDIR: /_work/runner-${GITHUB_REPO_2}
-      GITHUB_REPO: ${GITHUB_REPO_2}
-      LABELS: runner-${GITHUB_REPO_2}
-      PROJECT_KEY: ${GITHUB_REPO_2}
-      DISABLE_AUTOMATIC_DEREGISTRATION: "true"
-      CONFIGURED_ACTIONS_RUNNER_FILES_DIR: /actions-runner-config/${GITHUB_REPO_2}
-      UNSET_CONFIG_VARS: "true"
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - runner_config:/actions-runner-config/${GITHUB_REPO_2}
+      - runner_config:/actions-runner-config/org-${GITHUB_ORG}
       - sql_unit_report:/home/docker/sql-report-vol
       - ./sql-unit-reports:/home/docker/sql-unit-reports
 

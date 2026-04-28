@@ -57,6 +57,13 @@ echo "  Directory:  $(pwd)"
 echo "=================================================="
 
 echo ""
+if [[ -f "pre_deploy.sql" ]]; then
+  echo "Step 0: Running pre_deploy.sql..."
+  snow sql -f pre_deploy.sql -c "$CONNECTION_NAME"
+  echo "Pre-deploy completed."
+  echo ""
+fi
+
 echo "Step 1: Running DCM analyze..."
 snow dcm raw-analyze "$PROJECT_IDENTIFIER" -c "$CONNECTION_NAME" --target "$TARGET"
 echo "Analyze completed."

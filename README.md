@@ -1,7 +1,7 @@
 # **DataOps Unchained: Infrastructure that Scales**
 
-[![Update Local Repository and Run Sonar Scanner](https://github.com/zBrainiac/mother-of-all-Projects/actions/workflows/update-local-repo.yml/badge.svg)](https://github.com/zBrainiac/mother-of-all-Projects/actions/workflows/update-local-repo.yml)
-[![Docker Build and Push to Docker Hub (Multi-Arch)](https://github.com/zBrainiac/sql_quality_check/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/zBrainiac/sql_quality_check/actions/workflows/docker-publish.yml)
+[![Update Local Repository and Run Sonar Scanner](https://github.com/zbrainiac-labs/mother-of-all-Projects/actions/workflows/update-local-repo.yml/badge.svg)](https://github.com/zbrainiac-labs/mother-of-all-Projects/actions/workflows/update-local-repo.yml)
+[![Docker Build and Push to Docker Hub (Multi-Arch)](https://github.com/zbrainiac-labs/sql_quality_check/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/zbrainiac-labs/sql_quality_check/actions/workflows/docker-publish.yml)
 
 > **A hands-on reference architecture for fully automated SQL code quality pipelines using SonarQube, GitHub Actions, and Snowflake.**
 
@@ -23,7 +23,7 @@ DataOpsBackbone addresses these issues by automating every critical step:
 This setup offers repeatability, auditability and peace of mind, enabling new teams to get up and running quickly and allowing developers to focus on creating value rather than policing standards. The showcased projects are practical blueprints for achieving reliable, scalable analytics operations with Snowflake and GitHub Actions, not just demos.
 
 
-This showcase project, together with [**Mother-of-all-Projects**](https://github.com/zBrainiac/mother-of-all-Projects) — demonstrates a fully automated DataOps setup designed to enforce SQL code quality, structure release flows, and scale confidently with Snowflake and GitHub Actions.
+This showcase project, together with [**Mother-of-all-Projects**](https://github.com/zbrainiac-labs/mother-of-all-Projects) — demonstrates a fully automated DataOps setup designed to enforce SQL code quality, structure release flows, and scale confidently with Snowflake and GitHub Actions.
 
 ---
 
@@ -56,10 +56,10 @@ It combines:
 
 ## Project Structure
 
-- **[mother-of-all-Projects](https://github.com/zBrainiac/mother-of-all-Projects)**  
+- **[mother-of-all-Projects](https://github.com/zbrainiac-labs/mother-of-all-Projects)**  
   GitHub workflows, SQL refactoring logic, Snowflake deployment scripts, and validation via SQLUnit.
 
-- **[DataOps Backbone](https://github.com/zBrainiac/DataOpsBackbone)**  
+- **[DataOps Backbone](https://github.com/zbrainiac-labs/DataOpsBackbone)**  
   Dockerized infrastructure stack for:
   - SonarQube + PostgreSQL
   - GitHub self-hosted runners
@@ -190,7 +190,7 @@ Backups of these rules, which can be restored as a Quality Profile, are availabl
 
 #### 10. Table names must follow `{DOM}{COMP}_{MAT}_{TB}_` pattern
 ```regex
-(?i)^(?!\s*--)\s*CREATE\s+(OR\s+REPLACE\s+)?TABLE\s+(IF\s+NOT\s+EXISTS\s+)?(?:[A-Z0-9_]+\.){0,2}(?![A-Z0-9]{3}[A-Z]_(RAW|CUR|AGG|GOL)_TB_)[A-Z_][A-Z0-9_]*
+(?i)^(?!\s*--)\s*CREATE\s+(OR\s+REPLACE\s+)?(?!DYNAMIC\s)TABLE\s+(IF\s+NOT\s+EXISTS\s+)?(?:[A-Z0-9_]+\.){0,2}(?![A-Z0-9]{3}[A-Z]_(RAW|CUR|AGG|GOL)_TB_)[A-Z_][A-Z0-9_]*
 ```
 
 #### 11. View names must follow `{DOM}{COMP}_{MAT}_{VW}_` pattern
@@ -333,7 +333,9 @@ All configuration lives in one file. `start.sh` auto-generates `SNOW_CONFIG_B64`
 # GitHub
 GH_RUNNER_TOKEN=<...>
 GITHUB_OWNER=<your GitHub org/user>
-GITHUB_REPO_1=<your project>
+GITHUB_REPO_2=<second project, if needed>
+GITHUB_ORG=<your GitHub org for org-level runner>
+GH_ORG_TOKEN=<org-level runner token>
 
 # SonarQube (SONAR_TOKEN is auto-generated at runner startup)
 POSTGRES_USER=sonar

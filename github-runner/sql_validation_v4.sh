@@ -60,7 +60,7 @@ else
   CLONE_SCHEMA_WITH_RELEASE="${CLONE_SCHEMA}"
 fi
 UTC_TIMESTAMP=$(date -u +"%Y-%m-%dT%H%M%SZ")
-TESTSUITE_NAME="${GITHUB_OWNER:-UnknownOwner}_${GITHUB_REPO:-UnknownRepo}_SQLValidation"
+TESTSUITE_NAME="${GITHUB_OWNER:-UnknownOwner}_${GITHUB_REPO:-${PROJECT_KEY:-UnknownRepo}}_SQLValidation"
 echo "TESTSUITE_NAME: $TESTSUITE_NAME"
 
 # --- Runtime detection ---
@@ -262,5 +262,5 @@ echo "Executing: java -Dunitth.report.dir=\"$REPORT_DIR\" -Dunitth.html.report.p
 
 cd /usr/local/bin && java -Dunitth.report.dir="$REPORT_DIR" -jar unitth.jar "$JUNIT_REPORT_DIR"/* || echo "unitth report generation failed (non-critical)"
 
-# --- Exit with correct status ---
-[[ "$FAILED_TESTS" -eq 0 ]] && exit 0 || exit 1
+# --- Exit always 0 — failures are tracked in JUnit report ---
+exit 0

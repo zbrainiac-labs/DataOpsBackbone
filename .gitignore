@@ -13,5 +13,6 @@ SNOW_CONFIG_B64
 /github-runner/sql-report-vol/
 /github-runner/report.th/
 /github-runner/dependencies/
+/dependencies/
 /docs/
 /backup/*.sql

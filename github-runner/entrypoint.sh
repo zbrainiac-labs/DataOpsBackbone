@@ -5,7 +5,16 @@ set -euo pipefail
 GH_TOKEN=${ACCESS_TOKEN:-}
 GITHUB_OWNER=${GITHUB_OWNER:-}
 GITHUB_REPO=${GITHUB_REPO:-}
+RUNNER_SCOPE=${RUNNER_SCOPE:-repo}
 RUNNER_NAME=${RUNNER_NAME:-"github-runner-$(tr -dc A-Za-z0-9 </dev/urandom | head -c 8)"}
+
+if [[ "$RUNNER_SCOPE" == "org" ]]; then
+    API_BASE="https://api.github.com/orgs/${GITHUB_OWNER}"
+    CONFIG_URL="https://github.com/${GITHUB_OWNER}"
+else
+    API_BASE="https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}"
+    CONFIG_URL="https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}"
+fi
 
 echo "GITHUB_OWNER: ${GITHUB_OWNER}"
 echo "GITHUB_REPO: ${GITHUB_REPO}"
@@ -41,7 +50,7 @@ cleanup() {
         REMOVE_TOKEN=$(curl -s -X POST \
             -H "Authorization: token ${GH_TOKEN}" \
             -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/actions/runners/remove-token" \
+            "${API_BASE}/actions/runners/remove-token" \
             | jq -r .token)
 
         if [[ -n "${REMOVE_TOKEN}" && "${REMOVE_TOKEN}" != "null" ]]; then
@@ -60,8 +69,12 @@ trap 'cleanup; exit 130' INT
 trap 'cleanup; exit 143' TERM
 
 # Validate required vars
-if [[ -z "${GH_TOKEN}" || -z "${GITHUB_OWNER}" || -z "${GITHUB_REPO}" ]]; then
-    echo "ERROR: ACCESS_TOKEN, GITHUB_OWNER, and GITHUB_REPO must be set"
+if [[ -z "${GH_TOKEN}" || -z "${GITHUB_OWNER}" ]]; then
+    echo "ERROR: ACCESS_TOKEN and GITHUB_OWNER must be set"
+    exit 1
+fi
+if [[ "$RUNNER_SCOPE" != "org" && -z "${GITHUB_REPO}" ]]; then
+    echo "ERROR: GITHUB_REPO must be set for repo-level runners"
     exit 1
 fi
 
@@ -71,7 +84,7 @@ if [ -f .runner ]; then
     REMOVE_TOKEN=$(curl -s -X POST \
         -H "Authorization: token ${GH_TOKEN}" \
         -H "Accept: application/vnd.github+json" \
-        "https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/actions/runners/remove-token" \
+        "${API_BASE}/actions/runners/remove-token" \
         | jq -r .token)
 
     if [[ -n "${REMOVE_TOKEN}" && "${REMOVE_TOKEN}" != "null" ]]; then
@@ -86,7 +99,7 @@ echo "Fetching registration token..."
 REG_TOKEN=$(curl -s -X POST \
     -H "Authorization: token ${GH_TOKEN}" \
     -H "Accept: application/vnd.github+json" \
-    "https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/actions/runners/registration-token" \
+    "${API_BASE}/actions/runners/registration-token" \
     | jq -r .token)
 
 if [[ -z "${REG_TOKEN}" || "${REG_TOKEN}" == "null" ]]; then
@@ -95,7 +108,7 @@ if [[ -z "${REG_TOKEN}" || "${REG_TOKEN}" == "null" ]]; then
 fi
 
 echo "Registration token acquired. Configuring runner..."
-./config.sh --url "https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}" \
+./config.sh --url "${CONFIG_URL}" \
             --token "${REG_TOKEN}" \
             --name "${RUNNER_NAME}" \
             --unattended --replace
