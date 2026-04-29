@@ -109,7 +109,7 @@ jobs:
 
       - name: Run Sonar Scanner
         run: |
-          bash /usr/local/bin/sonar-scanner_v2.sh
+          PROJECT_VERSION="v${{ github.run_number }}" bash /usr/local/bin/sonar-scanner_v2.sh
 
       - name: Wait for Quality Gate to complete
         continue-on-error: ${{ !inputs.QUALITY_GATE_ENFORCED }}

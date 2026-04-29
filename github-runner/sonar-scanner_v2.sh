@@ -44,9 +44,11 @@ else
 fi
 
 echo "Running sonar-scanner..."
+PROJECT_VERSION="${PROJECT_VERSION:-$(git -C "$PROJECT_BASE_DIR" describe --tags --always 2>/dev/null || echo 'unknown')}"
 "$SONAR_SCANNER" \
   -Dsonar.projectKey="$PROJECT_KEY" \
   -Dsonar.projectBaseDir="$PROJECT_BASE_DIR" \
+  -Dsonar.projectVersion="$PROJECT_VERSION" \
   -Dsonar.host.url="$SONAR_HOST" \
   -Dsonar.scm.disabled=true \
   -Dsonar.language=sql \
