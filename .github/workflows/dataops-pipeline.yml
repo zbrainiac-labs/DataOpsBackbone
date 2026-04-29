@@ -145,19 +145,12 @@ jobs:
       - name: Run SQL Validation Tests
         run: |
           if [[ -f "sqlunit/tests.sqltest" && -f "manifest.yml" ]]; then
-            python3 -c "
-import yaml, re, sys
-with open('manifest.yml') as f:
-    m = yaml.safe_load(f)
-t = m.get('templating', {})
-merged = {**t.get('defaults', {}), **t.get('configurations', {}).get('$DCM_TARGET', {})}
-with open('sqlunit/tests.sqltest') as f:
-    content = f.read()
-for k, v in merged.items():
-    content = content.replace('{{ ' + k + ' }}', str(v))
-with open('sqlunit/tests.rendered.sqltest', 'w') as f:
-    f.write(content)
-" 
+            bash /usr/local/bin/render-sql_v1.sh \
+              --FILE=sqlunit/tests.sqltest \
+              --TARGET=$DCM_TARGET \
+              --CONNECTION_NAME=$CONNECTION_NAME \
+              --MANIFEST=manifest.yml \
+              --RENDER_ONLY=sqlunit/tests.rendered.sqltest
             TEST_FILE="$(pwd)/sqlunit/tests.rendered.sqltest"
           else
             TEST_FILE="$(pwd)/sqlunit/tests.sqltest"

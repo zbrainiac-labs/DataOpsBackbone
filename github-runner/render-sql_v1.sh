@@ -7,12 +7,12 @@ for ARG in "$@"; do
     --TARGET=*) TARGET="${ARG#*=}" ;;
     --CONNECTION_NAME=*) CONNECTION_NAME="${ARG#*=}" ;;
     --MANIFEST=*) MANIFEST="${ARG#*=}" ;;
+    --RENDER_ONLY=*) RENDER_ONLY="${ARG#*=}" ;;
     *) echo "Unknown argument: $ARG"; exit 1 ;;
   esac
 done
 
 SQL_FILE="${SQL_FILE:?Missing --FILE}"
-CONNECTION_NAME="${CONNECTION_NAME:?Missing --CONNECTION_NAME}"
 TARGET="${TARGET:-DEV}"
 MANIFEST="${MANIFEST:-manifest.yml}"
 
@@ -26,18 +26,32 @@ if [[ ! -f "$MANIFEST" ]]; then
   exit 1
 fi
 
-D_FLAGS=$(python3 -c "
-import yaml, sys
-
+if [[ -n "$RENDER_ONLY" ]]; then
+  python3 -c "
+import yaml
 with open('$MANIFEST') as f:
     m = yaml.safe_load(f)
-
 t = m.get('templating', {})
-defaults = t.get('defaults', {})
-config = t.get('configurations', {}).get('$TARGET', {})
+merged = {**t.get('defaults', {}), **t.get('configurations', {}).get('$TARGET', {})}
+with open('$SQL_FILE') as f:
+    content = f.read()
+for k, v in merged.items():
+    content = content.replace('{{ ' + k + ' }}', str(v))
+with open('$RENDER_ONLY', 'w') as f:
+    f.write(content)
+print(f'Rendered $SQL_FILE -> $RENDER_ONLY ({len(merged)} vars)')
+"
+  exit 0
+fi
 
-merged = {**defaults, **config}
+CONNECTION_NAME="${CONNECTION_NAME:?Missing --CONNECTION_NAME}"
 
+D_FLAGS=$(python3 -c "
+import yaml
+with open('$MANIFEST') as f:
+    m = yaml.safe_load(f)
+t = m.get('templating', {})
+merged = {**t.get('defaults', {}), **t.get('configurations', {}).get('$TARGET', {})}
 for k, v in merged.items():
     print(f'-D {k}={v}')
 ")
