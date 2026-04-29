@@ -1,0 +1,129 @@
+# ======================================================
+#        REUSABLE DATAOPS PIPELINE WORKFLOW
+# ======================================================
+#
+# Master workflow for all DataOps projects.
+# Called by consumer repos via:
+#   uses: zBrainiac/DataOpsBackbone/.github/workflows/dataops-pipeline.yml@main
+#
+# ======================================================
+
+name: DataOps Pipeline
+
+on:
+  workflow_call:
+    inputs:
+      SOURCE_DATABASE:
+        required: true
+        type: string
+        description: 'Snowflake database name'
+      SOURCE_SCHEMA:
+        required: true
+        type: string
+        description: 'Snowflake schema name'
+      DCM_PROJECT_IDENTIFIER:
+        required: true
+        type: string
+        description: 'DCM project identifier (db.schema.project)'
+      DCM_TARGET:
+        type: string
+        default: 'DEV'
+        description: 'DCM target environment'
+      QUALITY_GATE_ENFORCED:
+        type: boolean
+        default: false
+        description: 'Fail pipeline on Quality Gate failure'
+    secrets:
+      SNOW_CONFIG_B64:
+        required: true
+
+jobs:
+  update-and-scan:
+    runs-on: self-hosted
+    env:
+      PROJECT_KEY: ${{ github.event.repository.name }}
+      RELEASE_NUM: ${{ github.run_number }}
+      SONAR_BRANCH_NAME: ${{ github.ref_name }}
+      SONAR_HOST: http://sonarqube:9000
+      SOURCE_DATABASE: ${{ inputs.SOURCE_DATABASE }}
+      SOURCE_SCHEMA: ${{ inputs.SOURCE_SCHEMA }}
+      DCM_PROJECT_IDENTIFIER: ${{ inputs.DCM_PROJECT_IDENTIFIER }}
+      DCM_TARGET: ${{ inputs.DCM_TARGET }}
+      SNOW_CONFIG_B64: ${{ secrets.SNOW_CONFIG_B64 }}
+
+    steps:
+      - name: Set up dynamic base directories
+        run: |
+          echo "BASE_DIR_PROJECT=$HOME/workspace/${PROJECT_KEY}" >> $GITHUB_ENV
+
+      - name: Show repo info
+        run: |
+          echo "Project: $PROJECT_KEY"
+          echo "Branch: $SONAR_BRANCH_NAME"
+          echo "Release #: $RELEASE_NUM"
+          echo "DCM Project: $DCM_PROJECT_IDENTIFIER"
+          echo "Database: $SOURCE_DATABASE"
+          echo "Schema: $SOURCE_SCHEMA"
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Pull latest changes
+        run: git pull
+
+      - name: Set up github runner env
+        run: |
+          bash /usr/local/bin/github-runner_v1.sh
+          CONNECTION_NAME=$(grep -oP '^\[connections\.\K[^\]]+' $HOME/.snowflake/config.toml | head -1)
+          echo "CONNECTION_NAME=$CONNECTION_NAME" >> $GITHUB_ENV
+          if [[ -f "$HOME/.sonar_env" ]]; then
+            cat "$HOME/.sonar_env" >> $GITHUB_ENV
+          fi
+
+      - name: DCM Analyze + Plan + Deploy
+        run: |
+          bash /usr/local/bin/snowflake-deploy-dcm_v1.sh \
+            --PROJECT_IDENTIFIER=$DCM_PROJECT_IDENTIFIER \
+            --CONNECTION_NAME=$CONNECTION_NAME \
+            --TARGET=$DCM_TARGET \
+            --ALIAS="release-${RELEASE_NUM}-${GITHUB_RUN_ATTEMPT}" \
+            --PROJECT_DIR="$(pwd)"
+
+      - name: Extract dependencies
+        run: |
+          bash /usr/local/bin/snowflake-extract-dependencies_v1.sh \
+            --SOURCE_DATABASE=$SOURCE_DATABASE \
+            --SOURCE_SCHEMA=$SOURCE_SCHEMA \
+            --CONNECTION_NAME=$CONNECTION_NAME
+
+      - name: Run Sonar Scanner
+        run: |
+          bash /usr/local/bin/sonar-scanner_v2.sh
+
+      - name: Wait for Quality Gate to complete
+        continue-on-error: ${{ !inputs.QUALITY_GATE_ENFORCED }}
+        uses: sonarsource/sonarqube-quality-gate-action@v1.1.0
+        with:
+          scanMetadataReportFile: '.scannerwork/report-task.txt'
+
+      - name: Run SQL Validation Tests
+        run: |
+          bash /usr/local/bin/sql_validation_v4.sh \
+            --CLONE_DATABASE=$SOURCE_DATABASE \
+            --CLONE_SCHEMA=$SOURCE_SCHEMA \
+            --CONNECTION_NAME=$CONNECTION_NAME \
+            --TEST_FILE="$(pwd)/sqlunit/tests.sqltest"
+
+      - name: Zip source files
+        run: |
+          zip -r release.zip . -x '*.git*' '*.scannerwork*' 'out/*'
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: Release ${{ github.run_number }}
+          tag_name: v${{ github.run_number }}
+          files: release.zip
+          token: ${{ secrets.GITHUB_TOKEN }}
