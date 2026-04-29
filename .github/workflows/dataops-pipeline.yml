@@ -4,7 +4,15 @@
 #
 # Master workflow for all DataOps projects.
 # Called by consumer repos via:
-#   uses: zBrainiac/DataOpsBackbone/.github/workflows/dataops-pipeline.yml@main
+#   uses: zbrainiac-labs/DataOpsBackbone/.github/workflows/dataops-pipeline.yml@main
+#
+# Pipeline order:
+#   1. Pre-deploy (create DB/schemas/DCM project)
+#   2. Extract dependencies (DDL + cross-schema refs)
+#   3. SonarQube scan + Quality Gate
+#   4. DCM Analyze + Plan + Deploy
+#   5. SQL Validation Tests
+#   6. Package + Release
 #
 # ======================================================
 
@@ -82,14 +90,15 @@ jobs:
             cat "$HOME/.sonar_env" >> $GITHUB_ENV
           fi
 
-      - name: DCM Analyze + Plan + Deploy
+      - name: Run pre_deploy.sql
         run: |
-          bash /usr/local/bin/snowflake-deploy-dcm_v1.sh \
-            --PROJECT_IDENTIFIER=$DCM_PROJECT_IDENTIFIER \
-            --CONNECTION_NAME=$CONNECTION_NAME \
-            --TARGET=$DCM_TARGET \
-            --ALIAS="release-${RELEASE_NUM}-${GITHUB_RUN_ATTEMPT}" \
-            --PROJECT_DIR="$(pwd)"
+          if [[ -f "pre_deploy.sql" ]]; then
+            echo "Running pre_deploy.sql..."
+            snow sql -f pre_deploy.sql -c "$CONNECTION_NAME"
+            echo "Pre-deploy completed."
+          else
+            echo "No pre_deploy.sql found, skipping."
+          fi
 
       - name: Extract dependencies
         run: |
@@ -107,6 +116,15 @@ jobs:
         uses: sonarsource/sonarqube-quality-gate-action@v1.1.0
         with:
           scanMetadataReportFile: '.scannerwork/report-task.txt'
+
+      - name: DCM Analyze + Plan + Deploy
+        run: |
+          bash /usr/local/bin/snowflake-deploy-dcm_v1.sh \
+            --PROJECT_IDENTIFIER=$DCM_PROJECT_IDENTIFIER \
+            --CONNECTION_NAME=$CONNECTION_NAME \
+            --TARGET=$DCM_TARGET \
+            --ALIAS="release-${RELEASE_NUM}-${GITHUB_RUN_ATTEMPT}" \
+            --PROJECT_DIR="$(pwd)"
 
       - name: Run SQL Validation Tests
         run: |
