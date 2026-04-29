@@ -83,7 +83,10 @@ SELECT
         ELSE 'cross_db_false'
     END AS cross_db,
     CASE
-        WHEN dep_obj.REFERENCED_SCHEMA <> dep_obj.REFERENCING_SCHEMA THEN 'cross_schema_true'
+        WHEN dep_obj.REFERENCED_SCHEMA <> dep_obj.REFERENCING_SCHEMA
+             AND LEFT(dep_obj.REFERENCED_SCHEMA, POSITION('_' IN dep_obj.REFERENCED_SCHEMA) - 1)
+              <> LEFT(dep_obj.REFERENCING_SCHEMA, POSITION('_' IN dep_obj.REFERENCING_SCHEMA) - 1)
+        THEN 'cross_schema_true'
         ELSE 'cross_schema_false'
     END AS cross_schema,
     CASE
