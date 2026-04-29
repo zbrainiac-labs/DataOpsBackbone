@@ -53,7 +53,7 @@ with open('$MANIFEST') as f:
 t = m.get('templating', {})
 merged = {**t.get('defaults', {}), **t.get('configurations', {}).get('$TARGET', {})}
 for k, v in merged.items():
-    print(f'-D {k}={v}')
+    print(f'-D \"{k}={v}\"')
 ")
 
 echo "Running $SQL_FILE (target=$TARGET, connection=$CONNECTION_NAME)"
