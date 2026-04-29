@@ -58,9 +58,7 @@ echo "=================================================="
 
 echo ""
 if [[ -f "pre_deploy.sql" ]]; then
-  echo "Step 0: Running pre_deploy.sql..."
-  snow sql -f pre_deploy.sql -c "$CONNECTION_NAME"
-  echo "Pre-deploy completed."
+  echo "Step 0: Skipping pre_deploy.sql (already executed by pipeline)"
   echo ""
 fi
 
@@ -104,9 +102,7 @@ echo "Deploy completed."
 
 if [[ -f "post_deploy.sql" ]]; then
   echo ""
-  echo "Step 4: Running post_deploy.sql..."
-  snow sql -f post_deploy.sql -c "$CONNECTION_NAME"
-  echo "Post-deploy completed."
+  echo "Step 4: Skipping post_deploy.sql (executed by pipeline after DCM deploy)"
 fi
 
 echo ""
