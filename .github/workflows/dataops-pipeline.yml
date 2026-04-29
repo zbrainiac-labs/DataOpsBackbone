@@ -92,15 +92,13 @@ jobs:
 
       - name: Run pre_deploy.sql
         run: |
-          if [[ -f "pre_deploy.sql" ]]; then
-            echo "Running pre_deploy.sql..."
-            snow sql -f pre_deploy.sql -c "$CONNECTION_NAME"
-            echo "Pre-deploy completed."
-          else
-            echo "No pre_deploy.sql found, skipping."
-          fi
+          bash /usr/local/bin/render-sql_v1.sh \
+            --FILE=pre_deploy.sql \
+            --TARGET=$DCM_TARGET \
+            --CONNECTION_NAME=$CONNECTION_NAME
 
       - name: Extract dependencies
+        continue-on-error: true
         run: |
           bash /usr/local/bin/snowflake-extract-dependencies_v1.sh \
             --SOURCE_DATABASE=$SOURCE_DATABASE \
@@ -126,13 +124,49 @@ jobs:
             --ALIAS="release-${RELEASE_NUM}-${GITHUB_RUN_ATTEMPT}" \
             --PROJECT_DIR="$(pwd)"
 
+      - name: Run post_deploy.sql
+        run: |
+          bash /usr/local/bin/render-sql_v1.sh \
+            --FILE=post_deploy.sql \
+            --TARGET=$DCM_TARGET \
+            --CONNECTION_NAME=$CONNECTION_NAME
+
+      - name: Run custom scripts
+        run: |
+          if [[ -d "scripts/" ]]; then
+            for script in $(ls scripts/*.sh 2>/dev/null | sort); do
+              echo "Running $script..."
+              bash "$script" --connection=$CONNECTION_NAME --database=$SOURCE_DATABASE --target=$DCM_TARGET
+            done
+          else
+            echo "No scripts/ directory found, skipping."
+          fi
+
       - name: Run SQL Validation Tests
         run: |
+          if [[ -f "sqlunit/tests.sqltest" && -f "manifest.yml" ]]; then
+            python3 -c "
+import yaml, re, sys
+with open('manifest.yml') as f:
+    m = yaml.safe_load(f)
+t = m.get('templating', {})
+merged = {**t.get('defaults', {}), **t.get('configurations', {}).get('$DCM_TARGET', {})}
+with open('sqlunit/tests.sqltest') as f:
+    content = f.read()
+for k, v in merged.items():
+    content = content.replace('{{ ' + k + ' }}', str(v))
+with open('sqlunit/tests.rendered.sqltest', 'w') as f:
+    f.write(content)
+" 
+            TEST_FILE="$(pwd)/sqlunit/tests.rendered.sqltest"
+          else
+            TEST_FILE="$(pwd)/sqlunit/tests.sqltest"
+          fi
           bash /usr/local/bin/sql_validation_v4.sh \
             --CLONE_DATABASE=$SOURCE_DATABASE \
             --CLONE_SCHEMA=$SOURCE_SCHEMA \
             --CONNECTION_NAME=$CONNECTION_NAME \
-            --TEST_FILE="$(pwd)/sqlunit/tests.sqltest"
+            --TEST_FILE="$TEST_FILE"
 
       - name: Zip source files
         run: |
