@@ -6,12 +6,12 @@
 # Requires SONAR_HOST, SONAR_ADMIN_USER, SONAR_ADMIN_PASS env vars.
 # -----------------------------------------------------------------------------
 
-set -e
+set +e
 
 SONAR_HOST="${SONAR_HOST:-http://sonarqube:9000}"
 SONAR_ADMIN_USER="${SONAR_ADMIN_USER:-admin}"
 SONAR_ADMIN_PASS="${SONAR_ADMIN_PASS:-ThisIsNotSecure1234!}"
-TOKEN_NAME="runner-${GITHUB_REPO:-default}-$(date +%Y%m%d)"
+TOKEN_NAME="runner-${RUNNER_NAME:-${GITHUB_REPO:-default}}-$(date +%Y%m%d)"
 
 echo "Waiting for SonarQube at $SONAR_HOST..."
 for i in $(seq 1 60); do

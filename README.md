@@ -1,7 +1,6 @@
 # **DataOps Unchained: Infrastructure that Scales**
 
-[![Update Local Repository and Run Sonar Scanner](https://github.com/zbrainiac-labs/mother-of-all-Projects/actions/workflows/update-local-repo.yml/badge.svg)](https://github.com/zbrainiac-labs/mother-of-all-Projects/actions/workflows/update-local-repo.yml)
-[![Docker Build and Push to Docker Hub (Multi-Arch)](https://github.com/zbrainiac-labs/sql_quality_check/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/zbrainiac-labs/sql_quality_check/actions/workflows/docker-publish.yml)
+[![Docker Build and Push to Docker Hub (Multi-Arch)](https://github.com/zbrainiac-labs/DataOpsBackbone/actions/workflows/docker-publish.yml/badge.svg?branch=main)](https://github.com/zbrainiac-labs/DataOpsBackbone/actions/workflows/docker-publish.yml)
 
 > **A hands-on reference architecture for fully automated SQL code quality pipelines using SonarQube, GitHub Actions, and Snowflake.**
 
@@ -10,7 +9,7 @@
 ## Why / What / How
 
 ### Why?
-#### In large, federated organizations, scaling analytics isn’t (just) a tech challenge — it’s an operational one.
+#### In large, federated organizations, scaling analytics isn't (just) a tech challenge — it's an operational one.
 
 From a technological and operational perspective, automation, governance and consistency are vital for scaling analytics in large, federated organisations. With agile methodology and modularisation, deployment volume can rise to hundreds or thousands per day, so manual QA simply cannot keep pace. For example, if 15 analytics teams were to deploy changes daily, the number of full-time reviewers required for manual reviews would be prohibitively high, resulting in bottlenecks, missed checks and an increased risk of inconsistent standards and data incidents.
 DataOpsBackbone addresses these issues by automating every critical step:
@@ -22,9 +21,6 @@ DataOpsBackbone addresses these issues by automating every critical step:
 
 This setup offers repeatability, auditability and peace of mind, enabling new teams to get up and running quickly and allowing developers to focus on creating value rather than policing standards. The showcased projects are practical blueprints for achieving reliable, scalable analytics operations with Snowflake and GitHub Actions, not just demos.
 
-
-This showcase project, together with [**Mother-of-all-Projects**](https://github.com/zbrainiac-labs/mother-of-all-Projects) — demonstrates a fully automated DataOps setup designed to enforce SQL code quality, structure release flows, and scale confidently with Snowflake and GitHub Actions.
-
 ---
 
 ### What?
@@ -34,7 +30,8 @@ A DataOps pipeline that automates:
 - Syncing changes from GitHub
 - SQL linting & validation (SonarQube + regex rules)
 - Declarative schema deployment via Snowflake DCM (Database Change Management)
-- SQL validation testing against deployed objects
+- SQL validation testing against deployed objects (CTRF JSON reports)
+- Test trend reporting via UnitTestHistory v3.0
 - Packaging deployable artifacts
 
 #### Overview of the infrastructure:
@@ -46,24 +43,84 @@ A DataOps pipeline that automates:
 
 It combines:
 
-- **GitHub Actions** (with custom self-hosted runners)
+- **GitHub Actions** — reusable workflow called by all consumer repos
+- **Self-hosted runners** (2 org-level runners on `zbrainiac-labs`)
 - **SonarQube** extended with SQL & Text plugins
 - **Docker Compose** for local stack orchestration
 - **Snowflake CLI** with DCM for declarative deployment (`DEFINE` syntax + Jinja templating)
-- **SQLUnit** for automated SQL testing
+- **SQL Validation** with CTRF JSON test reports
+- **UnitTestHistory** for HTML trend dashboards
+
+---
+
+## Reusable Workflow Architecture
+
+DataOpsBackbone provides a **single reusable GitHub Actions workflow** that all consumer repos call:
+
+```yaml
+# In each consumer repo (.github/workflows/pipeline.yml):
+jobs:
+  pipeline:
+    uses: zbrainiac-labs/DataOpsBackbone/.github/workflows/dataops-pipeline.yml@main
+    with:
+      SOURCE_DATABASE: <DB_NAME>
+      SOURCE_SCHEMA: <SCHEMA_NAME>
+      DCM_PROJECT_IDENTIFIER: <DB.SCHEMA.PROJECT>
+      DCM_TARGET: DEV
+    secrets: inherit
+```
+
+### Pipeline Steps (executed in order):
+1. **Pre-deploy** — create DB/schemas/DCM project (`pre_deploy.sql`)
+2. **Extract dependencies** — DDL + cross-schema reference analysis
+3. **SonarQube scan** + Quality Gate check
+4. **DCM Deploy** — `raw-analyze` → `plan` → `deploy`
+5. **Post-deploy** — run `post_deploy.sql`
+6. **Custom scripts** — execute any `scripts/*.sh`
+7. **SQL Validation Tests** — CTRF JSON output
+8. **GitHub Release** — zip + tag
+
+### Consumer Repos:
+| Repo | Database | Schema |
+|------|----------|--------|
+| [mother-of-all-Projects](https://github.com/zbrainiac-labs/mother-of-all-Projects) | DATAOPS | IOT_RAW_V001 |
+| [project-one](https://github.com/zbrainiac-labs/project-one) | PROJECT_DEV | ONE_RAW_V001 |
+| [MasterDataManagement](https://github.com/zbrainiac-labs/MasterDataManagement) | MASTER_DATA_MANAGEMENT | CRM_AGG_001 |
+| [crm_dcm_project](https://github.com/zbrainiac-labs/crm_dcm_project) | CRM_DEV | PUBLIC |
+| [AAA_synthetic_bank](https://github.com/zbrainiac-labs/AAA_synthetic_bank) | AAA_DEV_SYNTHETIC_BANK | PUBLIC |
+| [sharing_any_objects](https://github.com/zbrainiac-labs/sharing_any_objects) | ECO_DEV | ECOS_RAW_V001 |
 
 ---
 
 ## Project Structure
 
-- **[mother-of-all-Projects](https://github.com/zbrainiac-labs/mother-of-all-Projects)**  
-  GitHub workflows, SQL refactoring logic, Snowflake deployment scripts, and validation via SQLUnit.
-
-- **[DataOps Backbone](https://github.com/zbrainiac-labs/DataOpsBackbone)**  
-  Dockerized infrastructure stack for:
-  - SonarQube + PostgreSQL
-  - GitHub self-hosted runners
-  - Local development/testing
+```
+DataOpsBackbone/
+├── .github/workflows/
+│   ├── dataops-pipeline.yml    # Reusable pipeline (called by all repos)
+│   └── docker-publish.yml      # Docker image CI
+├── github-runner/
+│   ├── Dockerfile              # Self-hosted runner image
+│   ├── entrypoint.sh           # Runner registration (org/repo scope)
+│   ├── sonar-rules-setup.sh    # Auto-create SonarQube quality profile
+│   ├── sonar-token-init.sh     # Auto-generate SONAR_TOKEN per runner
+│   ├── sonar-scanner_v2.sh     # Run sonar-scanner
+│   ├── sql_validation_v4.sh    # SQL tests → CTRF JSON
+│   ├── convert_junit_to_ctrf.py # Legacy XML→JSON migration
+│   ├── snowflake-deploy-dcm_v1.sh
+│   ├── snowflake-extract-dependencies_v1.sh
+│   ├── render-sql_v1.sh        # Jinja-style template rendering
+│   ├── unitth.jar              # UnitTestHistory v3.0
+│   └── tests.sqltest           # Sample test file
+├── sonarqube/Dockerfile        # Custom SonarQube image
+├── nginx/default.conf          # Nginx for test report serving
+├── backup/                     # SonarQube quality profile backups
+├── images/                     # Documentation images
+├── docker-compose.yml          # Full stack (SonarQube + 2 runners + nginx)
+├── start.sh                    # One-command startup
+├── DataOps_init.sql            # Snowflake bootstrap DDL
+└── open_points.md              # Backlog / deferred items
+```
 
 ---
 ## Architecture Overview - Data objects
@@ -333,9 +390,8 @@ All configuration lives in one file. `start.sh` auto-generates `SNOW_CONFIG_B64`
 # GitHub
 GH_RUNNER_TOKEN=<...>
 GITHUB_OWNER=<your GitHub org/user>
-GITHUB_REPO_2=<second project, if needed>
-GITHUB_ORG=<your GitHub org for org-level runner>
-GH_ORG_TOKEN=<org-level runner token>
+GITHUB_ORG=<your GitHub org for org-level runners>
+GH_ORG_TOKEN=<classic PAT with admin:org scope>
 
 # SonarQube (SONAR_TOKEN is auto-generated at runner startup)
 POSTGRES_USER=sonar
@@ -359,11 +415,11 @@ SNOW_PAT=<your PAT from Step 2>
 ---
 ### Step 4: Upload GitHub Secret
 
-Only **one** secret is needed:
+Only **one** secret is needed per org:
 
 ```bash
 ./start.sh  # generates SNOW_CONFIG_B64 automatically
-gh secret set SNOW_CONFIG_B64 --repo <owner>/<repo> < SNOW_CONFIG_B64
+gh secret set SNOW_CONFIG_B64 --org zbrainiac-labs --visibility all
 ```
 
 `SONAR_TOKEN` and `SNOW_CONNECTION_NAME` secrets are **no longer needed** -- they are auto-generated at runtime.
@@ -375,9 +431,21 @@ gh secret set SNOW_CONFIG_B64 --repo <owner>/<repo> < SNOW_CONFIG_B64
 1. Start your local stack via `./start.sh`
 2. Access SonarQube at: [http://localhost:9000](http://localhost:9000)  
   **Login**: `admin` / `ThisIsNotSecure1234!` (default 'admin')
-3. Trigger your GitHub workflow
-4. Check results in sonarqube
-5. monitor SQLUnit test results (incl. history) at: [http://localhost:8080](http://localhost:8080)
+3. Push to any consumer repo — the reusable workflow triggers automatically
+4. Check results in SonarQube
+5. Monitor SQL test results (incl. history) at: [http://localhost:8080](http://localhost:8080)
+
+---
+
+## Docker Compose Services
+
+| Service | Purpose | Port |
+|---------|---------|------|
+| `sonarqube` | Code quality + custom SQL rules | 9000 |
+| `db` | PostgreSQL backend for SonarQube | - |
+| `runner1` | Org-level self-hosted GitHub runner | - |
+| `runner2` | Org-level self-hosted GitHub runner | - |
+| `nginx-server` | Serves UnitTestHistory HTML reports | 8080 |
 
 ---
 

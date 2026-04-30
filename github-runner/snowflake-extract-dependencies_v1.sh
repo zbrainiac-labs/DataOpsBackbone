@@ -14,7 +14,7 @@
 #
 # -----------------------------------------------------------------------------
 
-set -e
+set +e
 
 # --- Default values ---
 OUTPUT_FILE_NAME="output_dependencies.csv"
@@ -67,7 +67,7 @@ echo "Output file: $FINAL_OUTPUT_FILE_DEPENDENCIES"
 
 # Run the dependency extraction SQL
 echo "Extracting dependencies..."
-snow sql -c "$CONNECTION_NAME" --format=csv -q "
+timeout 120 snow sql -c "$CONNECTION_NAME" --format=csv -q "
 SELECT
     dep_obj.REFERENCED_DATABASE AS base_database,
     dep_obj.REFERENCED_SCHEMA AS base_schema,
@@ -109,8 +109,15 @@ fi
 
 
 echo "Extracting DDL..."
-snow sql -c $CONNECTION_NAME -q "
-SELECT GET_DDL('DATABASE','$SOURCE_DATABASE')" --format=csv | tail -n +2 | tr -d '"' > $FINAL_OUTPUT_DIR/ddl.sql
+{
+  echo "-- ============================================================"
+  echo "-- DDL extract: $SOURCE_DATABASE"
+  echo "-- Generated: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  echo "-- Connection: $CONNECTION_NAME"
+  echo "-- ============================================================"
+  snow sql -c $CONNECTION_NAME -q "
+SELECT GET_DDL('DATABASE','$SOURCE_DATABASE')" --format=csv | tail -n +2 | tr -d '"'
+} > $FINAL_OUTPUT_DIR/ddl.sql
 
 echo "Done: $FINAL_OUTPUT_DIR/deps.csv + $FINAL_OUTPUT_DIR/ddl.sql"
 

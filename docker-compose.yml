@@ -60,9 +60,9 @@ services:
     networks:
       - sonarnet
 
-  runner3:
+  runner1:
     <<: *runner-base
-    container_name: github-runner-org-${GITHUB_ORG}
+    container_name: github-runner-org-${GITHUB_ORG}-1
     depends_on:
       sonarqube:
         condition: service_healthy
@@ -71,19 +71,45 @@ services:
       RUNNER_SCOPE: org
       GITHUB_OWNER: ${GITHUB_ORG}
       ACCESS_TOKEN: ${GH_ORG_TOKEN}
-      RUNNER_NAME: runner-org-${GITHUB_ORG}
-      RUNNER_WORKDIR: /_work/runner-org-${GITHUB_ORG}
+      RUNNER_NAME: runner-org-${GITHUB_ORG}-1
+      RUNNER_WORKDIR: /_work/runner-org-${GITHUB_ORG}-1
       GITHUB_REPO: ""
       LABELS: runner-org-${GITHUB_ORG}
       PROJECT_KEY: org-${GITHUB_ORG}
       DISABLE_AUTOMATIC_DEREGISTRATION: "true"
-      CONFIGURED_ACTIONS_RUNNER_FILES_DIR: /actions-runner-config/org-${GITHUB_ORG}
+      CONFIGURED_ACTIONS_RUNNER_FILES_DIR: /actions-runner-config/org-${GITHUB_ORG}-1
       UNSET_CONFIG_VARS: "true"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - runner_config:/actions-runner-config/org-${GITHUB_ORG}
+      - runner_config_1:/actions-runner-config/org-${GITHUB_ORG}-1
       - sql_unit_report:/home/docker/sql-report-vol
       - ./sql-unit-reports:/home/docker/sql-unit-reports
+
+  runner2:
+    <<: *runner-base
+    container_name: github-runner-org-${GITHUB_ORG}-2
+    depends_on:
+      sonarqube:
+        condition: service_healthy
+    environment:
+      <<: *runner-env
+      RUNNER_SCOPE: org
+      GITHUB_OWNER: ${GITHUB_ORG}
+      ACCESS_TOKEN: ${GH_ORG_TOKEN}
+      RUNNER_NAME: runner-org-${GITHUB_ORG}-2
+      RUNNER_WORKDIR: /_work/runner-org-${GITHUB_ORG}-2
+      GITHUB_REPO: ""
+      LABELS: runner-org-${GITHUB_ORG}
+      PROJECT_KEY: org-${GITHUB_ORG}
+      DISABLE_AUTOMATIC_DEREGISTRATION: "true"
+      CONFIGURED_ACTIONS_RUNNER_FILES_DIR: /actions-runner-config/org-${GITHUB_ORG}-2
+      UNSET_CONFIG_VARS: "true"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - runner_config_2:/actions-runner-config/org-${GITHUB_ORG}-2
+      - sql_unit_report:/home/docker/sql-report-vol
+      - ./sql-unit-reports:/home/docker/sql-unit-reports
+
 
   nginx-server:
     image: nginx
@@ -106,7 +132,9 @@ volumes:
   sonarqube_data:
   sonarqube_extensions:
   postgresql:
-  runner_config:
+  runner_config_1:
+  runner_config_2:
+
   sql_unit_report:
     name: sql_unit_report
 

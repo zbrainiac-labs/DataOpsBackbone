@@ -6,13 +6,14 @@ SNOW_CONFIG_B64
 *.pem
 **/.DS_Store
 
-/github-runner/sql-unit-reports/
-/github-runner/unit-report/
 /sql-unit-reports/
-/unitth/
+/sql-report-vol/
+/github-runner/sql-unit-reports/
 /github-runner/sql-report-vol/
+/github-runner/unit-report/
 /github-runner/report.th/
 /github-runner/dependencies/
 /dependencies/
 /docs/
 /backup/*.sql
+.snowflake/cortex/
