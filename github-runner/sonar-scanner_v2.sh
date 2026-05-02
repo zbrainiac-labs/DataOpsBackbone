@@ -60,6 +60,7 @@ PROJECT_VERSION="${PROJECT_VERSION:-$(git -C "$PROJECT_BASE_DIR" describe --tags
   -Dsonar.scm.disabled=true \
   -Dsonar.sql.dialect=snowflake \
   -Dsonar.exclusions=".git/**,LICENSE,LICENSE.*,*.md,*.txt,*.yml,*.yaml,*.json,*.properties" \
+  -Dsonar.tests="sqlunit,workload" \
   -Dsonar.text.inclusions="**/*.sql" \
   -Dsonar.python.version="3.11" \
   -Dsonar.sourceEncoding="UTF-8" \
