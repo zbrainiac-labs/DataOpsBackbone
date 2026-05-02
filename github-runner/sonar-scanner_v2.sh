@@ -43,6 +43,13 @@ else
   PROJECT_BASE_DIR="$(pwd)"
 fi
 
+SQLFLUFF_ISSUES="$PROJECT_BASE_DIR/sqlfluff_issues.json"
+EXTERNAL_ISSUES_ARG=""
+if [[ -f "$SQLFLUFF_ISSUES" ]]; then
+  echo "SQLFluff issues found: $SQLFLUFF_ISSUES"
+  EXTERNAL_ISSUES_ARG="-Dsonar.externalIssuesReportPaths=$SQLFLUFF_ISSUES"
+fi
+
 echo "Running sonar-scanner..."
 PROJECT_VERSION="${PROJECT_VERSION:-$(git -C "$PROJECT_BASE_DIR" describe --tags --always 2>/dev/null || echo 'unknown')}"
 "$SONAR_SCANNER" \
@@ -51,9 +58,10 @@ PROJECT_VERSION="${PROJECT_VERSION:-$(git -C "$PROJECT_BASE_DIR" describe --tags
   -Dsonar.projectVersion="$PROJECT_VERSION" \
   -Dsonar.host.url="$SONAR_HOST" \
   -Dsonar.scm.disabled=true \
-  -Dsonar.language=sql \
   -Dsonar.sql.dialect=snowflake \
-  -Dsonar.exclusions=".git/**" \
+  -Dsonar.exclusions=".git/**,LICENSE,LICENSE.*,*.md,*.txt,*.yml,*.yaml,*.json,*.properties" \
+  -Dsonar.text.inclusions="**/*.sql" \
   -Dsonar.python.version="3.11" \
   -Dsonar.sourceEncoding="UTF-8" \
+  $EXTERNAL_ISSUES_ARG \
   -Dsonar.token="$SONAR_TOKEN"

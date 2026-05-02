@@ -30,7 +30,7 @@ create_rule() {
   local REGEX="$4"
   local SEVERITY="${5:-MAJOR}"
 
-  ENCODED_REGEX=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote('expression=' + sys.argv[1], safe='='))" "$REGEX")
+  ENCODED_REGEX=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote('expression=' + sys.argv[1] + '|filePattern=**/*.sql', safe='=|'))" "$REGEX")
 
   HTTP_CODE=$(curl -s -o /tmp/sonar_response.json -w "%{http_code}" -u "$SONAR_AUTH" -X POST "$SONAR_HOST/api/rules/create" \
     -d "customKey=$KEY" \
@@ -60,13 +60,13 @@ create_rule "Disallow_plaintext_passwords" "Disallow plaintext passwords in DDL"
 
 echo ""
 echo "=== Data Type ==="
-create_rule "Disallow_usage_of_TIMESTAMP_types_other_than_TIMESTAMP_TZ" "Disallow TIMESTAMP_NTZ and TIMESTAMP_LTZ (only TIMESTAMP_TZ allowed)" "Use TIMESTAMP_TZ for timezone-aware timestamps. TIMESTAMP_NTZ and TIMESTAMP_LTZ cause ambiguity." '(?i)(?<!--.*)\bTIMESTAMP_(NTZ|LTZ)(\s*\(\s*\d+\s*\))?\b' "MAJOR"
+create_rule "Disallow_usage_of_TIMESTAMP_types_other_than_TIMESTAMP_TZ" "Disallow TIMESTAMP_NTZ and TIMESTAMP_LTZ (only TIMESTAMP_TZ allowed)" "Use TIMESTAMP_TZ for timezone-aware timestamps. TIMESTAMP_NTZ and TIMESTAMP_LTZ cause ambiguity." '^(?!\s*--).*\bTIMESTAMP_(NTZ|LTZ)(\s*\(\s*\d+\s*\))?\b' "MAJOR"
 
 echo ""
 echo "=== Data Quality & Consistency ==="
 create_rule "Disallow_SELECT_star" "Disallow SELECT * (force explicit column lists)" "Explicit column lists prevent breakage when schema changes." '(?i)^(?!\s*--)\s*SELECT\s+\*\s+FROM\b' "MINOR"
-create_rule "Disallow_FLOAT_DOUBLE" "Disallow FLOAT/DOUBLE -- prefer NUMBER(p,s)" "FLOAT has precision issues. Use NUMBER(precision, scale) for deterministic results." '(?i)(?<!--.*)\b(FLOAT|DOUBLE|REAL)\b' "MINOR"
-create_rule "Disallow_VARCHAR_without_length" "Disallow VARCHAR without explicit length" "Unbounded VARCHAR wastes metadata. Always specify explicit length." '(?i)(?<!--.*)\bVARCHAR\s*[^(]' "MINOR"
+create_rule "Disallow_FLOAT_DOUBLE" "Disallow FLOAT/DOUBLE/REAL -- prefer NUMBER(p,s)" "FLOAT has precision issues. Use NUMBER(precision, scale) for deterministic results." '^(?!\s*--).*\b(FLOAT|DOUBLE|REAL)\b' "MAJOR"
+create_rule "Disallow_VARCHAR_without_length" "Disallow VARCHAR without explicit length" "Unbounded VARCHAR wastes metadata. Always specify explicit length." '^(?!\s*--).*\bVARCHAR\s*[^(]' "MINOR"
 create_rule "CREATE_TABLE_must_have_COMMENT" "CREATE TABLE must include COMMENT" "Documentation standard. Every table must have a COMMENT." '(?i)^(?!\s*--)\s*CREATE\s+(OR\s+REPLACE\s+)?TABLE\s+(?!.*\bCOMMENT\b).*;\s*$' "MINOR"
 
 echo ""
@@ -89,6 +89,13 @@ create_rule "Stage_name_pattern" "Stage names must follow DOM+COMP_MAT_ST_ patte
 create_rule "File_Format_name_pattern" "File Format names must follow DOM+COMP_MAT_FF_ pattern" "Pattern: {3-char domain}{1-char component}_{RAW|CUR|AGG|GOL}_FF_{name}" '(?i)^(?!\s*--)\s*CREATE\s+(OR\s+REPLACE\s+)?FILE\s+FORMAT\s+(?:[A-Z0-9_]+\.){0,2}(?![A-Z0-9]{3}[A-Z]_(RAW|CUR|AGG|GOL)_FF_)[A-Z_][A-Z0-9_]*' "MAJOR"
 create_rule "Stored_Procedure_name_pattern" "Stored Procedure names must follow DOM+COMP_MAT_SP_ pattern" "Pattern: {3-char domain}{1-char component}_{RAW|CUR|AGG|GOL}_SP_{name}" '(?i)^(?!\s*--)\s*CREATE\s+(OR\s+REPLACE\s+)?PROCEDURE\s+(?:[A-Z0-9_]+\.){0,2}(?![A-Z0-9]{3}[A-Z]_(RAW|CUR|AGG|GOL)_SP_)[A-Z_][A-Z0-9_]*' "MAJOR"
 create_rule "Task_name_pattern" "Task names must follow DOM+COMP_MAT_TK_ pattern" "Pattern: {3-char domain}{1-char component}_{RAW|CUR|AGG|GOL}_TK_{name}" '(?i)^(?!\s*--)\s*CREATE\s+(OR\s+REPLACE\s+)?TASK\s+(?:[A-Z0-9_]+\.){0,2}(?![A-Z0-9]{3}[A-Z]_(RAW|CUR|AGG|GOL)_TK_)[A-Z_][A-Z0-9_]*' "MAJOR"
+
+echo ""
+echo "=== Code Style (from SQLFluff gap analysis) ==="
+create_rule "Keywords_must_be_UPPER" "SQL keywords must be UPPERCASE" "Enforce consistent UPPER case for SQL keywords (SELECT, FROM, WHERE, JOIN, etc.)." '^\s*\b(select|from|where|join|inner|left|right|outer|full|cross|on|and|or|not|group|order|having|limit|union|intersect|except|insert|update|delete|merge|into|values|set|case|when|then|else|end|as|in|is|like|between|exists|distinct|all|any|with|create|alter|drop|grant|revoke|truncate)\b' "MINOR"
+create_rule "Unnecessary_ELSE_NULL" "Unnecessary ELSE NULL in CASE statement" "CASE already returns NULL when no ELSE is specified. Remove ELSE NULL for cleaner code." '(?i)\bELSE\s+NULL\b' "MINOR"
+create_rule "JOIN_without_ON_clause" "JOIN without ON clause (potential cartesian join)" "Every JOIN should have an ON clause. Missing ON causes cartesian products." '(?i)\bJOIN\s+\S+\s*$' "MAJOR"
+create_rule "Implicit_alias_missing_AS" "Implicit alias (missing AS keyword)" "Use explicit AS keyword for column and table aliases for readability." '(?i)\b(SELECT|FROM|JOIN)\s+.*\)\s+[A-Z_][A-Z0-9_]*\s*[,\n]' "MINOR"
 
 echo ""
 echo "=== Cleanup test rule ==="

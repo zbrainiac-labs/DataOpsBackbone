@@ -105,6 +105,11 @@ jobs:
             --SOURCE_SCHEMA=$SOURCE_SCHEMA \
             --CONNECTION_NAME=$CONNECTION_NAME
 
+      - name: Run SQLFluff lint
+        continue-on-error: true
+        run: |
+          bash /usr/local/bin/sqlfluff-to-sonar.sh "$(pwd)" "$(pwd)/sqlfluff_issues.json"
+
       - name: Run Sonar Scanner
         run: |
           PROJECT_VERSION="v${{ github.run_number }}" bash /usr/local/bin/sonar-scanner_v2.sh

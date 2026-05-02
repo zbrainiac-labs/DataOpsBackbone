@@ -109,6 +109,11 @@ fi
 
 
 echo "Extracting DDL..."
+DDL_FILTER="/usr/local/bin/ddl_uppercase_keywords.py"
+if [[ ! -f "$DDL_FILTER" ]]; then
+  DDL_FILTER="$(dirname "$0")/ddl_uppercase_keywords.py"
+fi
+
 {
   echo "-- ============================================================"
   echo "-- DDL extract: $SOURCE_DATABASE"
@@ -117,7 +122,7 @@ echo "Extracting DDL..."
   echo "-- ============================================================"
   snow sql -c $CONNECTION_NAME -q "
 SELECT GET_DDL('DATABASE','$SOURCE_DATABASE')" --format=csv | tail -n +2 | tr -d '"'
-} > $FINAL_OUTPUT_DIR/ddl.sql
+} | python3 "$DDL_FILTER" > $FINAL_OUTPUT_DIR/ddl.sql
 
 echo "Done: $FINAL_OUTPUT_DIR/deps.csv + $FINAL_OUTPUT_DIR/ddl.sql"
 
