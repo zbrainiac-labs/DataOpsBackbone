@@ -50,6 +50,17 @@ if [[ -f "$SQLFLUFF_ISSUES" ]]; then
   EXTERNAL_ISSUES_ARG="-Dsonar.externalIssuesReportPaths=$SQLFLUFF_ISSUES"
 fi
 
+SONAR_TESTS_ARG=""
+TEST_DIRS=""
+for d in sqlunit workload; do
+  if [[ -d "$PROJECT_BASE_DIR/$d" ]]; then
+    TEST_DIRS="${TEST_DIRS:+$TEST_DIRS,}$d"
+  fi
+done
+if [[ -n "$TEST_DIRS" ]]; then
+  SONAR_TESTS_ARG="-Dsonar.tests=$TEST_DIRS"
+fi
+
 echo "Running sonar-scanner..."
 PROJECT_VERSION="${PROJECT_VERSION:-$(git -C "$PROJECT_BASE_DIR" describe --tags --always 2>/dev/null || echo 'unknown')}"
 "$SONAR_SCANNER" \
@@ -60,9 +71,9 @@ PROJECT_VERSION="${PROJECT_VERSION:-$(git -C "$PROJECT_BASE_DIR" describe --tags
   -Dsonar.scm.disabled=true \
   -Dsonar.sql.dialect=snowflake \
   -Dsonar.exclusions=".git/**,LICENSE,LICENSE.*,*.md,*.txt,*.yml,*.yaml,*.json,*.properties" \
-  -Dsonar.tests="sqlunit,workload" \
   -Dsonar.text.inclusions="**/*.sql" \
   -Dsonar.python.version="3.11" \
   -Dsonar.sourceEncoding="UTF-8" \
+  $SONAR_TESTS_ARG \
   $EXTERNAL_ISSUES_ARG \
   -Dsonar.token="$SONAR_TOKEN"
