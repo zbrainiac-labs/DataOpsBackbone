@@ -100,11 +100,15 @@ DataOpsBackbone/
 │   ├── dataops-pipeline.yml    # Reusable pipeline (called by all repos)
 │   └── docker-publish.yml      # Docker image CI
 ├── github-runner/
-│   ├── Dockerfile              # Self-hosted runner image
+│   ├── Dockerfile              # Self-hosted runner image (incl. SQLFluff)
 │   ├── entrypoint.sh           # Runner registration (org/repo scope)
-│   ├── sonar-rules-setup.sh    # Auto-create SonarQube quality profile
+│   ├── sonar-rules-setup.sh    # Auto-create SonarQube quality profile (40 txt: rules)
 │   ├── sonar-token-init.sh     # Auto-generate SONAR_TOKEN per runner
-│   ├── sonar-scanner_v2.sh     # Run sonar-scanner
+│   ├── sonar-scanner_v2.sh     # Run sonar-scanner + import SQLFluff issues
+│   ├── sqlfluff-to-sonar.sh    # Run SQLFluff → SonarQube Generic Issue format
+│   ├── sqlfluff_to_sonar.py    # JSON converter (SQLFluff → SonarQube)
+│   ├── sqlfluff_sonar.cfg      # SQLFluff config (non-overlapping rules only)
+│   ├── ddl_uppercase_keywords.py # Normalize GET_DDL() output
 │   ├── sql_validation_v4.sh    # SQL tests → CTRF JSON
 │   ├── convert_junit_to_ctrf.py # Legacy XML→JSON migration
 │   ├── snowflake-deploy-dcm_v1.sh
@@ -112,6 +116,11 @@ DataOpsBackbone/
 │   ├── render-sql_v1.sh        # Jinja-style template rendering
 │   ├── unitth.jar              # UnitTestHistory v3.0
 │   └── tests.sqltest           # Sample test file
+├── sqlfluff/                   # Standalone SQLFluff linter (alternative to SonarQube)
+│   ├── .sqlfluff               # SQLFluff config (all rules)
+│   ├── lint.py                 # Combined runner: SQLFluff + custom regex rules
+│   ├── plugins/dataops_rules/  # 28 custom regex rules (DO01–DO28)
+│   └── test_sql/               # Good/bad SQL examples for testing
 ├── sonarqube/Dockerfile        # Custom SonarQube image
 ├── nginx/default.conf          # Nginx for test report serving
 ├── backup/                     # SonarQube quality profile backups
@@ -372,28 +381,34 @@ Both tools run in the CI/CD pipeline. SQLFluff issues are imported into SonarQub
 Pipeline: ... → SQLFluff lint → sonar-scanner (imports sqlfluff_issues.json) → Quality Gate → ...
 ```
 
+### Scanner Configuration
+
+The scanner uses `sonar.language=sql` to ensure the SQL Code Checker plugin claims `.sql` files. The text plugin (`txt:`) runs alongside via its own sensor. Only `.git/**` is excluded — all other files are indexed.
+
 ### Rule Ownership (no duplicates)
 
 Each rule runs in **exactly one tool** to avoid double-counting:
 
 | Tool | Responsibility | Rules |
 |------|---------------|-------|
-| **SonarQube txt:** | Safety, security, naming, data types, deps, keywords UPPER | 40 rules |
+| **SonarQube txt:** | Safety, security, naming, data types, deps, style | 40 rules |
 | **SonarQube SQLCC:** | Structural SQL (views, joins, nulls, ORDER BY) | 19 rules |
-| **SQLFluff** (external) | Formatting, AST-based style, implicit aliases | 22 rules |
+| **SQLFluff** (external) | Formatting, AST-based style, implicit aliases | 23 rules |
+| **Total** | | **82 rules** |
 
-#### SonarQube Text Plugin (`txt:`) — regex-based, scans all `.sql` files
+#### SonarQube Text Plugin (`txt:`) — 40 regex-based rules
 
 | Category | Rules | Examples |
 |----------|------:|---------|
-| Safety | 5 | CREATE without IF NOT EXISTS, DROP without IF EXISTS, USE statements |
+| Safety | 6 | CREATE without IF NOT EXISTS, DROP without IF EXISTS, USE statements, ALTER TABLE DROP COLUMN, TRUNCATE |
 | Security | 4 | GRANT PUBLIC, ACCOUNTADMIN, GRANT ALL, plaintext passwords |
-| Naming conventions | 13 | Table/View/DT/Stage/Schema/FF/SP/Task naming patterns |
-| Data types | 3 | TIMESTAMP_NTZ/LTZ, FLOAT/DOUBLE, VARCHAR without length |
-| Quality | 5 | SELECT *, TABLE COMMENT, ORDER BY in views, COPY ON_ERROR, DT TARGET_LAG |
+| Naming conventions | 15 | Table/View/DT/Stage/Schema/FF/SP/Task/Stream/Semantic View naming, maturity-level code enforcement |
+| Data types | 3 | TIMESTAMP_NTZ/LTZ, FLOAT/DOUBLE/REAL, VARCHAR without length |
+| Quality | 6 | SELECT *, TABLE COMMENT, DEFINE COMMENT, ORDER BY in views, COPY ON_ERROR, DT TARGET_LAG |
 | Dependencies | 2 | Cross-database, cross-schema |
 | Style | 4 | Keywords UPPER, implicit alias, JOIN without ON, ELSE NULL |
-| Other | 4 | ALTER TABLE DROP COLUMN, TRUNCATE, DEFINE COMMENT, Task SERVERLESS |
+
+**Regex fix applied**: Rules 7 (TIMESTAMP), 20 (FLOAT), 21 (VARCHAR) use `^(?!\s*--).*` lookahead instead of the broken `(?<!--.*)` lookbehind which silently failed in Java's regex engine.
 
 #### SonarQube SQL Code Checker (`SQLCC:`) — AST-based
 
@@ -407,7 +422,7 @@ Each rule runs in **exactly one tool** to avoid double-counting:
 | C022 | Non-materialised view |
 | C023 | Cartesian join |
 
-#### SQLFluff (external issues in SonarQube) — AST-based, excludes `sources/definitions/`
+#### SQLFluff (external issues in SonarQube) — 23 AST-based rules, excludes `sources/definitions/`
 
 | Rule | Description | Severity |
 |------|-------------|----------|
@@ -439,17 +454,9 @@ Each rule runs in **exactly one tool** to avoid double-counting:
 - **PRS** — parse errors on DCM `DEFINE` syntax (SonarQube text plugin handles these files)
 - **CP01** — keywords UPPER (handled by `txt:Keywords_must_be_UPPER`)
 
-### Integrated Results (mother-of-all-Projects)
-
-| Source | Issues | Dashboard label |
-|--------|-------:|-----------------|
-| SonarQube native (txt: + SQLCC:) | 245 | `txt:*`, `SQLCC:*` |
-| SQLFluff external | 463 | `external_sqlfluff:*` |
-| **Total** | **708** | One SonarQube dashboard |
-
 ### DDL Post-Processing
 
-The `dependencies/ddl.sql` file is auto-generated by `GET_DDL()` which outputs lowercase keywords and tab indentation. The `ddl_uppercase_keywords.py` filter normalizes the output:
+The `dependencies/ddl.sql` file is auto-generated by Snowflake's `GET_DDL()` which outputs lowercase keywords and tab indentation. The `ddl_uppercase_keywords.py` filter normalizes the output:
 - Uppercases all unquoted identifiers and SQL keywords
 - Converts tabs to 4-space indentation
 - Adds space before `(` in object definitions

@@ -1,17 +1,17 @@
 # SQLFluff — Alternative SQL Linting Implementation
 
-This folder provides the same 28 SQL linting rules from SonarQube implemented using **SQLFluff** (Python-based SQL linter) as an alternative to the SonarQube + Text Plugin approach.
+This folder provides a **standalone** SQLFluff linter with the same 28 SQL linting rules from SonarQube, for local development or pre-commit hooks.
+
+In the CI/CD pipeline, SQLFluff runs **integrated with SonarQube** — issues are imported as external issues into the SonarQube dashboard (see `github-runner/sqlfluff-to-sonar.sh`).
 
 ## Why?
 
-| | SonarQube | SQLFluff |
-|---|-----------|----------|
-| **Setup** | Server + PostgreSQL + runner | `pip install sqlfluff` |
-| **Execution** | CI/CD pipeline via scanner | CLI or pre-commit hook |
-| **Custom rules** | Regex via Text Plugin | Python plugin + regex |
-| **Snowflake dialect** | Text-only (no AST) | Full AST parsing |
-| **Auto-fix** | No | Yes (formatting) |
-| **Report format** | SonarQube dashboard | Text, JSON, CTRF |
+| | SonarQube | SQLFluff (standalone) | SQLFluff (integrated) |
+|---|-----------|----------------------|----------------------|
+| **Setup** | Server + PostgreSQL + runner | `pip install sqlfluff` | Runs in Docker runner |
+| **Execution** | CI/CD pipeline | CLI or pre-commit | CI/CD pipeline |
+| **Dashboard** | SonarQube UI | Text / JSON output | SonarQube UI (external issues) |
+| **Auto-fix** | No | Yes (formatting) | No (report only) |
 
 ## Quick Start
 

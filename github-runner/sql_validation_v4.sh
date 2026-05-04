@@ -114,7 +114,8 @@ run_test() {
     EXIT_CODE=0
   else
     SQL_QUERY_PROCESSED=$(echo "$SQL_QUERY" | sed "s/{{DATABASE}}/$CLONE_DATABASE/g" | sed "s/{{SCHEMA}}/$CLONE_SCHEMA_WITH_RELEASE/g")
-    OUTPUT=$(snow sql -q "$SQL_QUERY_PROCESSED" -c "$CONNECTION_NAME" --format=json 2>&1)
+    local STDERR_FILE=$(mktemp)
+    OUTPUT=$(snow sql -q "$SQL_QUERY_PROCESSED" -c "$CONNECTION_NAME" --format=json 2>"$STDERR_FILE")
     CLI_EXIT_CODE=$?
 
     if [ $CLI_EXIT_CODE -eq 0 ]; then
@@ -127,10 +128,13 @@ run_test() {
         EXIT_CODE=0
       fi
     else
-      echo "❌ Snow CLI failed with exit code $CLI_EXIT_CODE: $OUTPUT"
+      local STDERR_CONTENT=$(cat "$STDERR_FILE" | strip_ansi)
+      echo "❌ Snow CLI failed with exit code $CLI_EXIT_CODE: $STDERR_CONTENT"
       EXIT_CODE=$CLI_EXIT_CODE
       RESULT="CLI_ERROR"
+      OUTPUT="$STDERR_CONTENT"
     fi
+    rm -f "$STDERR_FILE"
   fi
 
   local END_TIME_MS=$(($(date +%s) * 1000))

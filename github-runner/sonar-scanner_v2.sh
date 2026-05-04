@@ -9,10 +9,8 @@ SONAR_TOKEN="${SONAR_TOKEN:?Missing SONAR_TOKEN}"
 PROJECT_KEY="${PROJECT_KEY:?Missing PROJECT_KEY}"
 SONAR_HOST="${SONAR_HOST:-http://sonarqube:9000}"
 
-# Define sonar-scanner binary path inside the container
 SONAR_SCANNER="/usr/local/sonar-scanner/bin/sonar-scanner"
 
-# Check if the project already exists
 echo "Checking if project '$PROJECT_KEY' exists in SonarQube..."
 RESPONSE=$(curl -s -u "$SONAR_TOKEN:" "$SONAR_HOST/api/projects/search")
 
@@ -34,7 +32,6 @@ else
   fi
 fi
 
-# Run sonar-scanner
 if [[ -f /.dockerenv ]] || grep -qE '/docker/|/lxc/' /proc/1/cgroup 2>/dev/null; then
   PROJECT_BASE_DIR="/home/docker/actions-runner/_work/$PROJECT_KEY/$PROJECT_KEY"
 elif [[ "$(uname)" == "Darwin" ]]; then
@@ -50,17 +47,6 @@ if [[ -f "$SQLFLUFF_ISSUES" ]]; then
   EXTERNAL_ISSUES_ARG="-Dsonar.externalIssuesReportPaths=$SQLFLUFF_ISSUES"
 fi
 
-SONAR_TESTS_ARG=""
-TEST_DIRS=""
-for d in sqlunit workload; do
-  if [[ -d "$PROJECT_BASE_DIR/$d" ]]; then
-    TEST_DIRS="${TEST_DIRS:+$TEST_DIRS,}$d"
-  fi
-done
-if [[ -n "$TEST_DIRS" ]]; then
-  SONAR_TESTS_ARG="-Dsonar.tests=$TEST_DIRS"
-fi
-
 echo "Running sonar-scanner..."
 PROJECT_VERSION="${PROJECT_VERSION:-$(git -C "$PROJECT_BASE_DIR" describe --tags --always 2>/dev/null || echo 'unknown')}"
 "$SONAR_SCANNER" \
@@ -69,11 +55,9 @@ PROJECT_VERSION="${PROJECT_VERSION:-$(git -C "$PROJECT_BASE_DIR" describe --tags
   -Dsonar.projectVersion="$PROJECT_VERSION" \
   -Dsonar.host.url="$SONAR_HOST" \
   -Dsonar.scm.disabled=true \
+  -Dsonar.language=sql \
   -Dsonar.sql.dialect=snowflake \
-  -Dsonar.exclusions=".git/**,LICENSE,LICENSE.*,*.md,*.txt,*.yml,*.yaml,*.json,*.properties" \
-  -Dsonar.text.inclusions="**/*.sql" \
-  -Dsonar.python.version="3.11" \
+  -Dsonar.exclusions=".git/**,*.md" \
   -Dsonar.sourceEncoding="UTF-8" \
-  $SONAR_TESTS_ARG \
   $EXTERNAL_ISSUES_ARG \
   -Dsonar.token="$SONAR_TOKEN"

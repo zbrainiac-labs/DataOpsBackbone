@@ -50,7 +50,7 @@ RUN set -eux; \
 RUN echo "docker ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
 # Install Snowflake CLI and SQLFluff
-RUN pip install --no-cache-dir snowflake-cli pyyaml sqlfluff 'urllib3<2' 'requests>=2.31,<2.33'
+RUN pip install --no-cache-dir 'snowflake-cli>=3.16.0' pyyaml sqlfluff
 
 # Set environment PATH
 ENV PATH="/usr/local/sonar-scanner/bin:/usr/local/bin:${PATH}"
