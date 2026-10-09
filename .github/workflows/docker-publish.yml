@@ -28,7 +28,7 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build and push GitHub runner image (multi-arch)
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: ./github-runner
           file: ./github-runner/Dockerfile
@@ -38,7 +38,7 @@ jobs:
             brainiac/local-github-runner:latest
 
       - name: Build and push SonarQube image (multi-arch)
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v7
         with:
           context: ./sonarqube
           file: ./sonarqube/Dockerfile
