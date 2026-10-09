@@ -5,7 +5,7 @@
 # Executes: Dependencies -> DCM Deploy -> SonarQube -> SQL Validation
 # -----------------------------------------------------------------------------
 
-set -e
+set -Eeuo pipefail
 
 export SOURCE_DATABASE="${SOURCE_DATABASE:-DATAOPS}"
 export SOURCE_SCHEMA="${SOURCE_SCHEMA:-IOT_RAW_V001}"
@@ -23,7 +23,7 @@ if [[ -f /.dockerenv ]] || grep -qE '/docker/|/lxc/' /proc/1/cgroup 2>/dev/null;
   export OUTPUT_DIR="${OUTPUT_DIR:-/home/docker/actions-runner/_work/${PROJECT_KEY}/${PROJECT_KEY}}"
 elif [[ "$(uname)" == "Darwin" ]]; then
   echo "Running on macOS"
-  export BASE_WORKSPACE="${BASE_WORKSPACE:-/Users/mdaeppen/workspace}"
+  export BASE_WORKSPACE="${BASE_WORKSPACE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
   export OUTPUT_DIR="${OUTPUT_DIR:-${BASE_WORKSPACE}/${PROJECT_KEY}}"
 else
   echo "Unknown system, defaulting to current dir"

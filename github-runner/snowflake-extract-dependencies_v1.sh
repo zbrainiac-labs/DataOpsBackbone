@@ -15,6 +15,7 @@
 # -----------------------------------------------------------------------------
 
 set +e
+set -u
 
 # --- Default values ---
 OUTPUT_FILE_NAME="output_dependencies.csv"
@@ -39,15 +40,15 @@ for ARG in "$@"; do
 done
 
 # Validate required inputs
-if [[ -z "$SOURCE_DATABASE" || -z "$SOURCE_SCHEMA" || -z "$CONNECTION_NAME" ]]; then
+if [[ -z "${SOURCE_DATABASE:-}" || -z "${SOURCE_SCHEMA:-}" || -z "${CONNECTION_NAME:-}" ]]; then
   echo "❌ Missing required arguments."
   echo "Required: --SOURCE_DATABASE --SOURCE_SCHEMA --CONNECTION_NAME [--OUTPUT_DIR=...]"
   exit 1
 fi
 
 # Set default OUTPUT_DIR if not provided
-if [[ -z "$OUTPUT_DIR" ]]; then
-  if [[ -z "$PROJECT_KEY" ]]; then
+if [[ -z "${OUTPUT_DIR:-}" ]]; then
+  if [[ -z "${PROJECT_KEY:-}" ]]; then
     echo "❌ PROJECT_KEY is not set, and no --OUTPUT_DIR provided."
     exit 1
   fi
@@ -55,6 +56,7 @@ if [[ -z "$OUTPUT_DIR" ]]; then
 fi
 
 FINAL_OUTPUT_DIR="${OUTPUT_DIR}/dependencies"
+FINAL_OUTPUT_FILE_DEPENDENCIES="${FINAL_OUTPUT_DIR}/${OUTPUT_FILE_NAME}"
 
 
 # Ensure output directory exists

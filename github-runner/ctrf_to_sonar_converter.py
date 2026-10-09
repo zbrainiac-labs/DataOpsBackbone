@@ -2,7 +2,7 @@
 import json, sys, os
 from xml.etree.ElementTree import Element, SubElement, tostring
 
-def convert(ctrf_path, output_path):
+def convert(ctrf_path: str, output_path: str) -> None:
     with open(ctrf_path) as f:
         report = json.load(f)
 

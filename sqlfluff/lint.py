@@ -12,18 +12,25 @@ Usage:
 Output: CTRF JSON report (same format as sql_validation_v4.sh)
 """
 
+from __future__ import annotations
+
 import sys
-import os
 import json
 import subprocess
 import time
+import importlib.util
 from pathlib import Path
+from typing import Any
 
-sys.path.insert(0, os.path.dirname(__file__))
-from plugins.dataops_rules import RULES, scan_raw_sql
+_plugin_path = Path(__file__).resolve().parent / "plugins" / "dataops_rules" / "__init__.py"
+_spec = importlib.util.spec_from_file_location("dataops_rules", _plugin_path)
+_module = importlib.util.module_from_spec(_spec)  # type: ignore[arg-type]
+_spec.loader.exec_module(_module)  # type: ignore[union-attr]
+RULES = _module.RULES  # type: ignore[attr-defined]
+scan_raw_sql = _module.scan_raw_sql  # type: ignore[attr-defined]
 
 
-def run_sqlfluff(target, config_path):
+def run_sqlfluff(target: str, config_path: str | None) -> list[dict[str, Any]]:
     """Run sqlfluff lint and return parsed violations."""
     cmd = [
         "sqlfluff", "lint",
@@ -48,12 +55,14 @@ def run_sqlfluff(target, config_path):
                     "line": v.get("start_line_no", 0),
                     "category": "SQLFluff",
                 })
-    except (json.JSONDecodeError, TypeError):
-        pass
+    except (json.JSONDecodeError, TypeError) as e:
+        print(f"WARNING: Failed to parse SQLFluff JSON output: {e}", file=sys.stderr)
+        if result.stderr:
+            print(f"  SQLFluff stderr: {result.stderr.strip()}", file=sys.stderr)
     return violations
 
 
-def run_custom_rules(target):
+def run_custom_rules(target: str) -> list[dict[str, Any]]:
     """Run custom regex rules on all .sql files."""
     violations = []
     target_path = Path(target)
@@ -73,7 +82,7 @@ def run_custom_rules(target):
     return violations
 
 
-def print_text_report(sqlfluff_violations, custom_violations, elapsed_ms):
+def print_text_report(sqlfluff_violations: list[dict[str, Any]], custom_violations: list[dict[str, Any]], elapsed_ms: int) -> int:
     total_sf = len(sqlfluff_violations)
     total_custom = len(custom_violations)
 
@@ -99,7 +108,7 @@ def print_text_report(sqlfluff_violations, custom_violations, elapsed_ms):
     return total
 
 
-def write_ctrf_report(sqlfluff_violations, custom_violations, elapsed_ms, output_path):
+def write_ctrf_report(sqlfluff_violations: list[dict[str, Any]], custom_violations: list[dict[str, Any]], elapsed_ms: int, output_path: str) -> None:
     tests = []
     for v in sqlfluff_violations:
         tests.append({
@@ -142,7 +151,7 @@ def write_ctrf_report(sqlfluff_violations, custom_violations, elapsed_ms, output
     print(f"CTRF report: {output_path}")
 
 
-def main():
+def main() -> None:
     if len(sys.argv) < 2:
         print("Usage: python3 lint.py <file_or_dir> [--format=text|json]")
         sys.exit(1)
@@ -153,9 +162,8 @@ def main():
         if arg.startswith("--format="):
             out_format = arg.split("=", 1)[1]
 
-    config_path = os.path.join(os.path.dirname(__file__), ".sqlfluff")
-    if not os.path.exists(config_path):
-        config_path = None
+    config_path_obj = Path(__file__).resolve().parent / ".sqlfluff"
+    config_path = str(config_path_obj) if config_path_obj.exists() else None
 
     start = time.time()
     sqlfluff_violations = run_sqlfluff(target, config_path)
@@ -165,7 +173,7 @@ def main():
     total = print_text_report(sqlfluff_violations, custom_violations, elapsed_ms)
 
     if out_format == "json":
-        report_path = os.path.join(os.path.dirname(__file__), "lint_report.json")
+        report_path = str(Path(__file__).resolve().parent / "lint_report.json")
         write_ctrf_report(sqlfluff_violations, custom_violations, elapsed_ms, report_path)
 
     sys.exit(1 if total > 0 else 0)

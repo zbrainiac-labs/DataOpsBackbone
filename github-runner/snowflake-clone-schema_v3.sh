@@ -14,6 +14,7 @@
 # Result: DATAOPS.IOT_RAW_V001_42 (clone) with DCM project created
 # -----------------------------------------------------------------------------
 set +e
+set -u
 
 for ARG in "$@"; do
   case $ARG in
@@ -26,7 +27,7 @@ for ARG in "$@"; do
   esac
 done
 
-if [[ -z "$SOURCE_DATABASE" || -z "$SOURCE_SCHEMA" || -z "$RELEASE_NUM" || -z "$CONNECTION_NAME" ]]; then
+if [[ -z "${SOURCE_DATABASE:-}" || -z "${SOURCE_SCHEMA:-}" || -z "${RELEASE_NUM:-}" || -z "${CONNECTION_NAME:-}" ]]; then
   echo "Missing required arguments."
   echo "Required: --SOURCE_DATABASE --SOURCE_SCHEMA --RELEASE_NUM --CONNECTION_NAME [--PROJECT_KEY]"
   exit 1
@@ -45,7 +46,7 @@ if [ $? -ne 0 ]; then
 fi
 echo "Clone created: ${SOURCE_DATABASE}.${CLONE_SCHEMA}"
 
-if [[ -n "$PROJECT_KEY" ]]; then
+if [[ -n "${PROJECT_KEY:-}" ]]; then
   echo "Creating DCM project: ${SOURCE_DATABASE}.${CLONE_SCHEMA}.${PROJECT_KEY}"
   snow sql -c "$CONNECTION_NAME" -q "
 CREATE DCM PROJECT IF NOT EXISTS ${SOURCE_DATABASE}.${CLONE_SCHEMA}.${PROJECT_KEY};

@@ -65,8 +65,8 @@ on:
         description: 'Use OIDC workload identity for Snowflake auth (false = SNOW_CONFIG_B64 fallback)'
       SNOWFLAKE_ACCOUNT:
         type: string
-        default: 'zs28104.eu-central-1'
-        description: 'Snowflake account identifier for OIDC auth'
+        required: false
+        description: 'Snowflake account identifier. Required when USE_OIDC=true. When USE_OIDC=false, uses the Snowflake CLI configured default connection.'
     secrets:
       SNOW_CONFIG_B64:
         required: true
@@ -112,6 +112,10 @@ jobs:
           [[ "$SOURCE_DATABASE" =~ ^[A-Z0-9_]+$ ]] || { echo "::error::Invalid SOURCE_DATABASE: $SOURCE_DATABASE"; exit 1; }
           [[ "$SOURCE_SCHEMA" =~ ^[A-Za-z0-9_]+$ ]] || { echo "::error::Invalid SOURCE_SCHEMA: $SOURCE_SCHEMA"; exit 1; }
           [[ "$DCM_PROJECT_IDENTIFIER" =~ ^[A-Za-z0-9_.]+$ ]] || { echo "::error::Invalid DCM_PROJECT_IDENTIFIER: $DCM_PROJECT_IDENTIFIER"; exit 1; }
+          if [[ "${{ inputs.USE_OIDC }}" == "true" && -z "${{ inputs.SNOWFLAKE_ACCOUNT }}" ]]; then
+            echo "::error::SNOWFLAKE_ACCOUNT is required when USE_OIDC=true"
+            exit 1
+          fi
 
       - name: Checkout repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
@@ -120,30 +124,11 @@ jobs:
 
       - name: Setup Snowflake connection
         id: sf
-        run: |
-          set -Eeuo pipefail
-          mkdir -p $HOME/.snowflake
-          if [[ "${{ inputs.USE_OIDC }}" == "true" ]]; then
-            cat > $HOME/.snowflake/config.toml <<TOML
-          [connections.default]
-          account = "${{ inputs.SNOWFLAKE_ACCOUNT }}"
-          user = "SVC_CICD"
-          role = "CICD"
-          warehouse = "MD_TEST_WH"
-          authenticator = "WORKLOAD_IDENTITY"
-          workload_identity_provider = "OIDC"
-          TOML
-            chmod 600 $HOME/.snowflake/config.toml
-            echo "CONNECTION_NAME=default" >> $GITHUB_ENV
-          else
-            export SNOW_CONFIG_B64="${{ secrets.SNOW_CONFIG_B64 }}"
-            bash /usr/local/bin/github-runner_v1.sh
-            CONNECTION_NAME=$(grep -oP '^\[connections\.\K[^\]]+' $HOME/.snowflake/config.toml | head -1)
-            echo "CONNECTION_NAME=$CONNECTION_NAME" >> $GITHUB_ENV
-          fi
-          if [[ -f "$HOME/.sonar_env" ]]; then
-            grep '^SONAR_' "$HOME/.sonar_env" >> $GITHUB_ENV || true
-          fi
+        uses: ./.github/actions/snowflake-connect
+        with:
+          use_oidc: ${{ inputs.USE_OIDC }}
+          snowflake_account: ${{ inputs.SNOWFLAKE_ACCOUNT }}
+          snow_config_b64: ${{ secrets.SNOW_CONFIG_B64 }}
 
       - name: Render and execute pre_deploy.sql
         if: ${{ !inputs.DRY_RUN }}
@@ -177,30 +162,11 @@ jobs:
           fetch-depth: 0
 
       - name: Setup Snowflake connection
-        run: |
-          set -Eeuo pipefail
-          mkdir -p $HOME/.snowflake
-          if [[ "${{ inputs.USE_OIDC }}" == "true" ]]; then
-            cat > $HOME/.snowflake/config.toml <<TOML
-          [connections.default]
-          account = "${{ inputs.SNOWFLAKE_ACCOUNT }}"
-          user = "SVC_CICD"
-          role = "CICD"
-          warehouse = "MD_TEST_WH"
-          authenticator = "WORKLOAD_IDENTITY"
-          workload_identity_provider = "OIDC"
-          TOML
-            chmod 600 $HOME/.snowflake/config.toml
-            echo "CONNECTION_NAME=default" >> $GITHUB_ENV
-          else
-            export SNOW_CONFIG_B64="${{ secrets.SNOW_CONFIG_B64 }}"
-            bash /usr/local/bin/github-runner_v1.sh
-            CONNECTION_NAME=$(grep -oP '^\[connections\.\K[^\]]+' $HOME/.snowflake/config.toml | head -1)
-            echo "CONNECTION_NAME=$CONNECTION_NAME" >> $GITHUB_ENV
-          fi
-          if [[ -f "$HOME/.sonar_env" ]]; then
-            grep '^SONAR_' "$HOME/.sonar_env" >> $GITHUB_ENV || true
-          fi
+        uses: ./.github/actions/snowflake-connect
+        with:
+          use_oidc: ${{ inputs.USE_OIDC }}
+          snowflake_account: ${{ inputs.SNOWFLAKE_ACCOUNT }}
+          snow_config_b64: ${{ secrets.SNOW_CONFIG_B64 }}
 
       - name: Extract dependencies
         continue-on-error: true
@@ -265,30 +231,11 @@ jobs:
           fetch-depth: 0
 
       - name: Setup Snowflake connection
-        run: |
-          set -Eeuo pipefail
-          mkdir -p $HOME/.snowflake
-          if [[ "${{ inputs.USE_OIDC }}" == "true" ]]; then
-            cat > $HOME/.snowflake/config.toml <<TOML
-          [connections.default]
-          account = "${{ inputs.SNOWFLAKE_ACCOUNT }}"
-          user = "SVC_CICD"
-          role = "CICD"
-          warehouse = "MD_TEST_WH"
-          authenticator = "WORKLOAD_IDENTITY"
-          workload_identity_provider = "OIDC"
-          TOML
-            chmod 600 $HOME/.snowflake/config.toml
-            echo "CONNECTION_NAME=default" >> $GITHUB_ENV
-          else
-            export SNOW_CONFIG_B64="${{ secrets.SNOW_CONFIG_B64 }}"
-            bash /usr/local/bin/github-runner_v1.sh
-            CONNECTION_NAME=$(grep -oP '^\[connections\.\K[^\]]+' $HOME/.snowflake/config.toml | head -1)
-            echo "CONNECTION_NAME=$CONNECTION_NAME" >> $GITHUB_ENV
-          fi
-          if [[ -f "$HOME/.sonar_env" ]]; then
-            grep '^SONAR_' "$HOME/.sonar_env" >> $GITHUB_ENV || true
-          fi
+        uses: ./.github/actions/snowflake-connect
+        with:
+          use_oidc: ${{ inputs.USE_OIDC }}
+          snowflake_account: ${{ inputs.SNOWFLAKE_ACCOUNT }}
+          snow_config_b64: ${{ secrets.SNOW_CONFIG_B64 }}
 
       - name: Clone schema for build
         id: clone
@@ -383,30 +330,11 @@ jobs:
           fetch-depth: 0
 
       - name: Setup Snowflake connection
-        run: |
-          set -Eeuo pipefail
-          mkdir -p $HOME/.snowflake
-          if [[ "${{ inputs.USE_OIDC }}" == "true" ]]; then
-            cat > $HOME/.snowflake/config.toml <<TOML
-          [connections.default]
-          account = "${{ inputs.SNOWFLAKE_ACCOUNT }}"
-          user = "SVC_CICD"
-          role = "CICD"
-          warehouse = "MD_TEST_WH"
-          authenticator = "WORKLOAD_IDENTITY"
-          workload_identity_provider = "OIDC"
-          TOML
-            chmod 600 $HOME/.snowflake/config.toml
-            echo "CONNECTION_NAME=default" >> $GITHUB_ENV
-          else
-            export SNOW_CONFIG_B64="${{ secrets.SNOW_CONFIG_B64 }}"
-            bash /usr/local/bin/github-runner_v1.sh
-            CONNECTION_NAME=$(grep -oP '^\[connections\.\K[^\]]+' $HOME/.snowflake/config.toml | head -1)
-            echo "CONNECTION_NAME=$CONNECTION_NAME" >> $GITHUB_ENV
-          fi
-          if [[ -f "$HOME/.sonar_env" ]]; then
-            grep '^SONAR_' "$HOME/.sonar_env" >> $GITHUB_ENV || true
-          fi
+        uses: ./.github/actions/snowflake-connect
+        with:
+          use_oidc: ${{ inputs.USE_OIDC }}
+          snowflake_account: ${{ inputs.SNOWFLAKE_ACCOUNT }}
+          snow_config_b64: ${{ secrets.SNOW_CONFIG_B64 }}
 
       - name: Run SQL Validation Tests
         run: |
@@ -433,7 +361,7 @@ jobs:
         run: |
           CTRF_FILE=$(find sql-unit-reports -name 'TEST_*.json' 2>/dev/null | sort | tail -1 || true)
           if [[ -n "$CTRF_FILE" ]]; then
-            python3 /usr/local/bin/ctrf_to_sonar_test.py "$CTRF_FILE" "$(pwd)/sonar_test_report.xml"
+            python3 /usr/local/bin/ctrf_to_sonar_converter.py "$CTRF_FILE" "$(pwd)/sonar_test_report.xml"
           else
             echo "No CTRF report found, skipping conversion."
           fi
@@ -458,30 +386,11 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
 
       - name: Setup Snowflake connection
-        run: |
-          set -Eeuo pipefail
-          mkdir -p $HOME/.snowflake
-          if [[ "${{ inputs.USE_OIDC }}" == "true" ]]; then
-            cat > $HOME/.snowflake/config.toml <<TOML
-          [connections.default]
-          account = "${{ inputs.SNOWFLAKE_ACCOUNT }}"
-          user = "SVC_CICD"
-          role = "CICD"
-          warehouse = "MD_TEST_WH"
-          authenticator = "WORKLOAD_IDENTITY"
-          workload_identity_provider = "OIDC"
-          TOML
-            chmod 600 $HOME/.snowflake/config.toml
-            echo "CONNECTION_NAME=default" >> $GITHUB_ENV
-          else
-            export SNOW_CONFIG_B64="${{ secrets.SNOW_CONFIG_B64 }}"
-            bash /usr/local/bin/github-runner_v1.sh
-            CONNECTION_NAME=$(grep -oP '^\[connections\.\K[^\]]+' $HOME/.snowflake/config.toml | head -1)
-            echo "CONNECTION_NAME=$CONNECTION_NAME" >> $GITHUB_ENV
-          fi
-          if [[ -f "$HOME/.sonar_env" ]]; then
-            grep '^SONAR_' "$HOME/.sonar_env" >> $GITHUB_ENV || true
-          fi
+        uses: ./.github/actions/snowflake-connect
+        with:
+          use_oidc: ${{ inputs.USE_OIDC }}
+          snowflake_account: ${{ inputs.SNOWFLAKE_ACCOUNT }}
+          snow_config_b64: ${{ secrets.SNOW_CONFIG_B64 }}
 
       - name: Drop clone schema
         run: |
@@ -518,30 +427,11 @@ jobs:
           fetch-depth: 0
 
       - name: Setup Snowflake connection
-        run: |
-          set -Eeuo pipefail
-          mkdir -p $HOME/.snowflake
-          if [[ "${{ inputs.USE_OIDC }}" == "true" ]]; then
-            cat > $HOME/.snowflake/config.toml <<TOML
-          [connections.default]
-          account = "${{ inputs.SNOWFLAKE_ACCOUNT }}"
-          user = "SVC_CICD"
-          role = "CICD"
-          warehouse = "MD_TEST_WH"
-          authenticator = "WORKLOAD_IDENTITY"
-          workload_identity_provider = "OIDC"
-          TOML
-            chmod 600 $HOME/.snowflake/config.toml
-            echo "CONNECTION_NAME=default" >> $GITHUB_ENV
-          else
-            export SNOW_CONFIG_B64="${{ secrets.SNOW_CONFIG_B64 }}"
-            bash /usr/local/bin/github-runner_v1.sh
-            CONNECTION_NAME=$(grep -oP '^\[connections\.\K[^\]]+' $HOME/.snowflake/config.toml | head -1)
-            echo "CONNECTION_NAME=$CONNECTION_NAME" >> $GITHUB_ENV
-          fi
-          if [[ -f "$HOME/.sonar_env" ]]; then
-            grep '^SONAR_' "$HOME/.sonar_env" >> $GITHUB_ENV || true
-          fi
+        uses: ./.github/actions/snowflake-connect
+        with:
+          use_oidc: ${{ inputs.USE_OIDC }}
+          snowflake_account: ${{ inputs.SNOWFLAKE_ACCOUNT }}
+          snow_config_b64: ${{ secrets.SNOW_CONFIG_B64 }}
 
       - name: DCM Deploy to original
         if: ${{ inputs.CLONE_PER_BUILD }}

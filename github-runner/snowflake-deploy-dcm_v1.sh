@@ -13,7 +13,7 @@
 #   --PROJECT_DIR=/path/to/project
 # -----------------------------------------------------------------------------
 
-set -e
+set -Eeuo pipefail
 
 for ARG in "$@"; do
   case $ARG in

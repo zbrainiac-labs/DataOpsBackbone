@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -Eeuo pipefail
 
 if [[ -z "${SONAR_TOKEN:-}" && -f "$HOME/.sonar_env" ]]; then
   source "$HOME/.sonar_env"

@@ -115,7 +115,7 @@ def convert_junit_xml_to_ctrf(xml_path: Path) -> dict:
     return ctrf
 
 
-def main():
+def main() -> None:
     if len(sys.argv) < 2:
         print("Usage: convert_junit_to_ctrf.py <report-directory>")
         sys.exit(1)

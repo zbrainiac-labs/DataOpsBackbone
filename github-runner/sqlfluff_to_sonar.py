@@ -19,46 +19,59 @@ IMPACT_MAP = {
     'CV06': 'LOW',
 }
 
-RULE_DESCRIPTIONS = {}
 
-with open(sys.argv[1]) as f:
-    data = json.load(f)
+def convert(input_path: str, output_path: str) -> int:
+    """Read SQLFluff JSON, write SonarQube generic issue JSON. Return issue count."""
+    with open(input_path) as f:
+        data = json.load(f)
 
-issues = []
-rules_seen = {}
-for file_result in data:
-    filepath = file_result.get('filepath', '')
-    if any(s in filepath for s in SKIP_PATHS):
-        continue
-    for v in file_result.get('violations', []):
-        code = v.get('code', '')
-        if code in SKIP_RULES:
+    issues = []
+    rules_seen = {}
+    for file_result in data:
+        filepath = file_result.get('filepath', '')
+        if any(s in filepath for s in SKIP_PATHS):
             continue
-        desc = v.get('description', '')
-        if code not in rules_seen:
-            rules_seen[code] = desc
-        issues.append({
-            'ruleId': code,
-            'primaryLocation': {
-                'message': desc,
-                'filePath': filepath,
-                'textRange': {'startLine': v.get('start_line_no', 1)}
-            }
+        for v in file_result.get('violations', []):
+            code = v.get('code', '')
+            if code in SKIP_RULES:
+                continue
+            desc = v.get('description', '')
+            if code not in rules_seen:
+                rules_seen[code] = desc
+            issues.append({
+                'ruleId': code,
+                'primaryLocation': {
+                    'message': desc,
+                    'filePath': filepath,
+                    'textRange': {'startLine': v.get('start_line_no', 1)}
+                }
+            })
+
+    rules = []
+    for code in sorted(rules_seen.keys()):
+        severity = IMPACT_MAP.get(code, 'LOW')
+        rules.append({
+            'id': code,
+            'name': code,
+            'description': rules_seen[code] or f'SQLFluff rule {code}',
+            'engineId': 'sqlfluff',
+            'cleanCodeAttribute': 'FORMATTED',
+            'impacts': [{'softwareQuality': 'MAINTAINABILITY', 'severity': severity}]
         })
 
-rules = []
-for code in sorted(rules_seen.keys()):
-    severity = IMPACT_MAP.get(code, 'LOW')
-    rules.append({
-        'id': code,
-        'name': code,
-        'description': rules_seen[code] or f'SQLFluff rule {code}',
-        'engineId': 'sqlfluff',
-        'cleanCodeAttribute': 'FORMATTED',
-        'impacts': [{'softwareQuality': 'MAINTAINABILITY', 'severity': severity}]
-    })
+    with open(output_path, 'w') as f:
+        json.dump({'rules': rules, 'issues': issues}, f, indent=2)
 
-with open(sys.argv[2], 'w') as f:
-    json.dump({'rules': rules, 'issues': issues}, f, indent=2)
+    return len(issues)
 
-print(f'SQLFluff: {len(issues)} issues written to {sys.argv[2]}')
+
+def main() -> None:
+    if len(sys.argv) != 3:
+        print(f"Usage: {sys.argv[0]} <sqlfluff_json> <sonar_output_json>", file=sys.stderr)
+        sys.exit(1)
+    count = convert(sys.argv[1], sys.argv[2])
+    print(f'SQLFluff: {count} issues written to {sys.argv[2]}')
+
+
+if __name__ == "__main__":
+    main()

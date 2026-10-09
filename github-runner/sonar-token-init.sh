@@ -7,6 +7,7 @@
 # -----------------------------------------------------------------------------
 
 set +e
+set -u
 
 SONAR_HOST="${SONAR_HOST:-http://sonarqube:9000}"
 SONAR_ADMIN_USER="${SONAR_ADMIN_USER:-admin}"

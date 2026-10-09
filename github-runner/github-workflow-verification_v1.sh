@@ -1,4 +1,5 @@
 #!/bin/bash
+set -Eeuo pipefail
 
 # github-workflow-verification_v1.sh
 # shasum -a 256 .github/workflows/update-local-repo.yml

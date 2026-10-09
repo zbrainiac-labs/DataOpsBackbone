@@ -1,5 +1,6 @@
 #!/bin/bash
 set +e
+set -u
 
 PROJECT_DIR="${1:-.}"
 OUTPUT_FILE="${2:-sqlfluff_issues.json}"

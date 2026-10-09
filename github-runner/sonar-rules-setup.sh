@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -Eeuo pipefail
 
 SONAR_HOST="${SONAR_HOST:-http://localhost:9000}"
 SONAR_AUTH="admin:${SONAR_ADMIN_PASS:-ThisIsNotSecure1234!}"

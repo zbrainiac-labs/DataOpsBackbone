@@ -15,6 +15,7 @@
 FAKE_RUN=false
 RELEASE_NUM=""
 set +e
+set -u
 
 # --- Argument parsing ---
 for ARG in "$@"; do
@@ -42,7 +43,7 @@ done
 echo "FAKE_RUN is set to: $FAKE_RUN"
 
 # --- Validation ---
-if [[ -z "$CLONE_SCHEMA" || -z "$CLONE_DATABASE" || -z "$CONNECTION_NAME" || -z "$TEST_FILE" ]]; then
+if [[ -z "${CLONE_SCHEMA:-}" || -z "${CLONE_DATABASE:-}" || -z "${CONNECTION_NAME:-}" || -z "${TEST_FILE:-}" ]]; then
   echo "❌ Missing required arguments."
   exit 1
 fi

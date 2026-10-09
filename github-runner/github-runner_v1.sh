@@ -6,7 +6,7 @@
 # Checks PAT expiry and warns if < 30 days remaining
 # -----------------------------------------------------------------------------
 
-set -e
+set -Eeuo pipefail
 
 SNOW_DIR="$HOME/.snowflake"
 mkdir -p "$SNOW_DIR"

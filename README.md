@@ -27,14 +27,66 @@ This setup offers repeatability, auditability and peace of mind, enabling new te
 
 A DataOps pipeline that automates:
 
-- Syncing changes from GitHub
-- SQL linting & validation (SonarQube + regex rules)
+- SQL linting & validation (SonarQube + regex rules + SQLFluff)
 - Declarative schema deployment via Snowflake DCM (Database Change Management)
 - SQL validation testing against deployed objects (CTRF JSON reports)
 - Test trend reporting via UnitTestHistory v3.0
 - Packaging deployable artifacts
 
 #### Overview of the infrastructure:
+#### CI/CD Pipeline Flow (6 composable jobs):
+
+```mermaid
+graph LR
+    push[Git Push] --> prepare
+    prepare --> scan
+    scan --> deploy
+    deploy --> validate
+    deploy --> cleanup
+    validate --> release
+    cleanup --> release
+```
+
+#### Runtime Component Topology:
+
+```mermaid
+graph TD
+    subgraph docker_stack [Docker Compose Stack]
+        sonarqube["SonarQube :9000"]
+        postgres[PostgreSQL]
+        runner1[Runner 1]
+        runner2[Runner 2]
+        nginx["Nginx :8080"]
+    end
+    subgraph github_cloud [GitHub]
+        consumer[Consumer Repos]
+        backbone[DataOpsBackbone]
+    end
+    subgraph snowflake_account [Snowflake]
+        dcm[DCM Projects]
+        schemas[Versioned Schemas]
+    end
+    consumer -->|workflow_call| backbone
+    backbone -->|triggers| runner1
+    runner1 -->|snow CLI| snowflake_account
+    runner1 -->|sonar-scanner| sonarqube
+    sonarqube --> postgres
+    runner1 -->|test reports| nginx
+```
+
+#### Snowflake Object Lifecycle:
+
+```mermaid
+graph TD
+    preDeploy["pre_deploy.sql"] -->|CREATE DB/SCHEMA| raw["DOMAIN_RAW_vNNN"]
+    raw -->|DCM deploy| objects["Tables / Views / DTs"]
+    objects -->|SQL tests| validation[CTRF Reports]
+    validation -->|pass| releaseNode["GitHub Release vN"]
+    objects -->|clone per build| clone["SCHEMA_NNN"]
+    clone -->|test against| validation
+    clone -->|drop after| cleanupNode[Cleanup]
+```
+
 ![overview infrastructure](images/DataOps_infra_overview.png)
 
 ---
@@ -76,6 +128,25 @@ jobs:
 
 ### Pipeline Jobs (6 composable jobs):
 
+```mermaid
+flowchart LR
+    subgraph pipeline [DataOps Pipeline]
+        prepare[prepare]
+        scan[scan]
+        deploy[deploy]
+        validate[validate]
+        cleanup[cleanup]
+        release[release]
+    end
+    prepare --> scan
+    prepare --> deploy
+    scan --> deploy
+    deploy --> validate
+    deploy --> cleanup
+    validate --> release
+    cleanup --> release
+```
+
 | Job | Timeout | Purpose |
 |-----|---------|---------|
 | **prepare** | 10 min | Validate inputs, OIDC auth, pre-deploy SQL |
@@ -90,6 +161,54 @@ jobs:
 The pipeline uses **OIDC Workload Identity Federation** by default (secretless). GitHub issues a short-lived token per job that Snowflake validates directly. No PAT or stored secrets needed.
 
 Fallback to `SNOW_CONFIG_B64` (PAT-based) is available via `USE_OIDC: false`.
+
+> **Note:** `SNOWFLAKE_ACCOUNT` is required when using OIDC auth (`USE_OIDC: true`).
+> When using PAT fallback (`USE_OIDC: false`), the account is taken from the Snowflake CLI's configured connection in `SNOW_CONFIG_B64`.
+
+#### OIDC Setup (one-time, org-level)
+
+**1. Configure GitHub org OIDC subject claim:**
+
+Go to: https://github.com/organizations/YOUR_ORG/settings/actions/oidc-configuration
+
+Set "Subject claim template" to: `repository_owner`
+
+Then apply via API (requires `admin:org` scope):
+```bash
+gh auth refresh -h github.com -s admin:org
+gh api -X PUT orgs/YOUR_ORG/actions/oidc/customization/sub \
+  --input - <<< '{"include_claim_keys":["repository_owner"]}'
+```
+
+This makes all repos in the org emit the same OIDC subject: `repository_owner:YOUR_ORG`
+
+**2. Configure Snowflake service user:**
+
+```sql
+USE ROLE ACCOUNTADMIN;
+ALTER USER SVC_CICD SET
+  WORKLOAD_IDENTITY = (
+    TYPE = OIDC
+    ISSUER = 'https://token.actions.githubusercontent.com'
+    SUBJECT = 'repository_owner:YOUR_ORG'
+  );
+```
+
+**3. Add `id-token: write` to consumer repo callers:**
+
+```yaml
+permissions:
+  id-token: write
+  contents: write
+  actions: read
+  checks: write
+```
+
+**4. No secrets needed** — remove `SNOW_CONFIG_B64` org secret after verification.
+
+#### Local Development (PAT-based fallback)
+
+For local Docker development, `start.sh` still generates `SNOW_CONFIG_B64` from `.env` variables. This is used by the runner containers for SonarQube rule setup and local testing only.
 
 ### Pipeline Hardening (built-in):
 - **OIDC auth** — secretless, short-lived tokens per job (no stored PAT)
@@ -140,20 +259,21 @@ When disabled (default), quality gate failures are reported but do not block the
 ```
 DataOpsBackbone/
 ├── .github/workflows/
-│   ├── dataops-pipeline.yml    # Reusable pipeline (called by all repos)
+│   ├── dataops-pipeline.yml    # Reusable 6-job pipeline (called by all repos)
 │   └── docker-publish.yml      # Docker image CI
 ├── github-runner/
-│   ├── Dockerfile              # Self-hosted runner image (incl. SQLFluff)
+│   ├── Dockerfile              # Self-hosted runner image (incl. SQLFluff, yq)
 │   ├── entrypoint.sh           # Runner registration (org/repo scope)
-│   ├── sonar-rules-setup.sh    # Auto-create SonarQube quality profile (40 txt: rules)
+│   ├── github-runner_v1.sh     # Decode SNOW_CONFIG_B64 (PAT fallback)
+│   ├── sonar-rules-setup.sh    # Auto-create SonarQube quality profile (40 rules)
 │   ├── sonar-token-init.sh     # Auto-generate SONAR_TOKEN per runner
-│   ├── sonar-scanner_v2.sh     # Run sonar-scanner + import SQLFluff issues
+│   ├── sonar-scanner_v2.sh     # Run sonar-scanner + import SQLFluff + test results
 │   ├── sqlfluff-to-sonar.sh    # Run SQLFluff → SonarQube Generic Issue format
 │   ├── sqlfluff_to_sonar.py    # JSON converter (SQLFluff → SonarQube)
+│   ├── ctrf_to_sonar_converter.py  # CTRF JSON → SonarQube Test Execution XML
 │   ├── sqlfluff_sonar.cfg      # SQLFluff config (non-overlapping rules only)
 │   ├── ddl_uppercase_keywords.py # Normalize GET_DDL() output
 │   ├── sql_validation_v4.sh    # SQL tests → CTRF JSON
-│   ├── convert_junit_to_ctrf.py # Legacy XML→JSON migration
 │   ├── snowflake-deploy-dcm_v1.sh
 │   ├── snowflake-extract-dependencies_v1.sh
 │   ├── render-sql_v1.sh        # Jinja-style template rendering
@@ -164,6 +284,9 @@ DataOpsBackbone/
 │   ├── lint.py                 # Combined runner: SQLFluff + custom regex rules
 │   ├── plugins/dataops_rules/  # 28 custom regex rules (DO01–DO28)
 │   └── test_sql/               # Good/bad SQL examples for testing
+├── docs/
+│   ├── QUICKSTART.md           # 15-minute first pipeline guide
+│   └── TROUBLESHOOTING.md      # Per-job failure/recovery guide
 ├── sonarqube/Dockerfile        # Custom SonarQube image
 ├── nginx/default.conf          # Nginx for test report serving
 ├── backup/                     # SonarQube quality profile backups
@@ -555,7 +678,7 @@ POSTGRES_PASSWORD=sonar
 POSTGRES_DB=sonarqube
 SONAR_JDBC_USERNAME=sonar
 SONAR_JDBC_PASSWORD=sonar
-SONAR_ADMIN_PASS=ThisIsNotSecure1234!
+SONAR_ADMIN_PASS=<CHANGE_ME_STRONG_PASSWORD>
 
 # Snowflake (SNOW_CONFIG_B64 is auto-generated by start.sh)
 CONNECTION_NAME=<your-connection-name>
@@ -569,9 +692,11 @@ SNOW_PAT=<your PAT from Step 2>
 ```
 
 ---
-### Step 4: Upload GitHub Secret
+### Step 4: Configure Authentication
 
-Only **one** secret is needed per org:
+**Option A: OIDC (recommended, secretless)** — see "OIDC Setup" section above. No GitHub secrets needed.
+
+**Option B: PAT fallback** — set `USE_OIDC: false` in consumer repos and upload the secret:
 
 ```bash
 ./start.sh  # generates SNOW_CONFIG_B64 automatically
@@ -586,7 +711,9 @@ gh secret set SNOW_CONFIG_B64 --org zbrainiac-labs --visibility all
 
 1. Start your local stack via `./start.sh`
 2. Access SonarQube at: [http://localhost:9000](http://localhost:9000)  
-  **Login**: `admin` / `ThisIsNotSecure1234!` (default 'admin')
+  **Login**: `admin` / `<your SONAR_ADMIN_PASS from .env>`
+
+  > **Warning**: Never use example passwords in production. Set unique, strong values in your `.env` file.
 3. Push to any consumer repo — the reusable workflow triggers automatically
 4. Check results in SonarQube
 5. Monitor SQL test results (incl. history) at: [http://localhost:8080](http://localhost:8080)
@@ -602,6 +729,23 @@ gh secret set SNOW_CONFIG_B64 --org zbrainiac-labs --visibility all
 | `runner1` | Org-level self-hosted GitHub runner | - |
 | `runner2` | Org-level self-hosted GitHub runner | - |
 | `nginx-server` | Serves UnitTestHistory HTML reports | 8080 |
+
+---
+
+## Compatibility Matrix
+
+| Component | Minimum | Tested | Notes |
+|-----------|---------|--------|-------|
+| Snowflake CLI | 3.16.0 | 3.18.0 | OIDC requires >= 3.11 |
+| SonarQube | 10.0+ | 26.x (Community Build) | Scanner 8.x requires 10+ |
+| Sonar Scanner CLI | 8.0.0 | 8.1.0.6389 | Use 5.x for SonarQube 9.x |
+| SQLFluff | 3.0+ | latest | Snowflake dialect |
+| GitHub Actions Runner | 2.320+ | 2.330.0 | Self-hosted, Linux x64/arm64 |
+| Docker Compose | v2+ | v2.x | No `version:` key needed |
+| PostgreSQL | 15+ | 17.5 | SonarQube backend |
+| Python | 3.10+ | 3.10 | Runner image (jammy) |
+| yq | 4.x | latest | YAML manipulation |
+| Java | 21 | eclipse-temurin:21-jre | Scanner + UnitTestHistory |
 
 ---
 

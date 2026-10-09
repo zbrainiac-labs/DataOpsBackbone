@@ -1,5 +1,5 @@
 # Base image
-FROM eclipse-temurin:21-jre-jammy
+FROM eclipse-temurin:21.0.7_6-jre-jammy
 
 # Set build arguments
 ARG TARGETARCH

@@ -1,0 +1,18 @@
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "docker"
+    directory: "/github-runner"
+    schedule:
+      interval: "monthly"
+  - package-ecosystem: "docker"
+    directory: "/sonarqube"
+    schedule:
+      interval: "monthly"
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"

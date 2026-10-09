@@ -3,6 +3,7 @@
 /.secrets
 /sec.txt
 SNOW_CONFIG_B64
+IMPROVEMENTS.md
 *.pem
 **/.DS_Store
 
@@ -15,5 +16,5 @@ SNOW_CONFIG_B64
 /github-runner/dependencies/
 /dependencies/
 /docs/
-/backup/*.sql
+/backup/
 .snowflake/cortex/

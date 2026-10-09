@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """Post-process Snowflake GET_DDL() output: uppercase identifiers, fix formatting."""
+from __future__ import annotations
+
 import sys
 import re
+from typing import Iterable
 
 IDENT_PATTERN = re.compile(r'(?<!["\'])(?<!\w)([a-z_][a-z0-9_]*)(?!\w)(?!["\'])', re.IGNORECASE)
 
-def uppercase_outside_strings(line):
+def uppercase_outside_strings(line: str) -> str:
     parts = re.split(r"('[^']*')", line)
     result = []
     for i, part in enumerate(parts):
@@ -14,13 +17,13 @@ def uppercase_outside_strings(line):
         result.append(part)
     return ''.join(result)
 
-def fix_spacing(line):
+def fix_spacing(line: str) -> str:
     line = re.sub(r'(\w)\(', r'\1 (', line)
     line = re.sub(r'\(\s{2,}', '(', line)
     line = re.sub(r'\s{2,}\)', ')', line)
     return line
 
-def expand_inline_select(line):
+def expand_inline_select(line: str) -> list[str]:
     m = re.match(r'^(\s*\)\s*AS\s+)SELECT\s+(.+?)\s+FROM\s+(.+)$', line, re.IGNORECASE)
     if not m:
         return [line]
@@ -44,13 +47,24 @@ def expand_inline_select(line):
         lines[-1] += parts[-1]
     return lines
 
-for raw_line in sys.stdin:
-    raw_line = raw_line.rstrip('\n')
-    raw_line = raw_line.replace('\t', '    ')
+def process_line(raw_line: str) -> list[str]:
+    """Process a single DDL line: uppercase, fix spacing, expand inline SELECTs."""
+    raw_line = raw_line.rstrip('\n').replace('\t', '    ')
     if raw_line.lstrip().startswith('--'):
-        print(raw_line)
-        continue
+        return [raw_line]
     raw_line = uppercase_outside_strings(raw_line)
     raw_line = fix_spacing(raw_line)
-    for out_line in expand_inline_select(raw_line):
+    return expand_inline_select(raw_line)
+
+
+def process_lines(lines: Iterable[str]) -> list[str]:
+    """Process multiple DDL lines."""
+    output = []
+    for line in lines:
+        output.extend(process_line(line))
+    return output
+
+
+if __name__ == "__main__":
+    for out_line in process_lines(sys.stdin):
         print(out_line)

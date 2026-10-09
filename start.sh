@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -Eeuo pipefail
 
 # Step 0: Clean up (optional)
 # docker compose down -v --remove-orphans

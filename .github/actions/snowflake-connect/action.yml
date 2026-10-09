@@ -1,0 +1,49 @@
+name: 'Setup Snowflake connection'
+description: 'Configure Snowflake CLI authentication (OIDC or PAT fallback)'
+inputs:
+  use_oidc:
+    description: 'Use OIDC workload identity'
+    required: true
+  snowflake_account:
+    description: 'Snowflake account identifier (required for OIDC)'
+    required: false
+    default: ''
+  snow_config_b64:
+    description: 'Base64-encoded Snowflake config (PAT fallback)'
+    required: false
+    default: ''
+outputs:
+  connection-name:
+    description: 'Resolved Snowflake connection name'
+    value: ${{ steps.connect.outputs.connection-name }}
+runs:
+  using: 'composite'
+  steps:
+    - id: connect
+      shell: bash
+      run: |
+        set -Eeuo pipefail
+        mkdir -p $HOME/.snowflake
+        if [[ "${{ inputs.use_oidc }}" == "true" ]]; then
+          cat > $HOME/.snowflake/config.toml <<TOML
+        [connections.default]
+        account = "${{ inputs.snowflake_account }}"
+        user = "SVC_CICD"
+        role = "CICD"
+        warehouse = "MD_TEST_WH"
+        authenticator = "WORKLOAD_IDENTITY"
+        workload_identity_provider = "OIDC"
+        TOML
+          chmod 600 $HOME/.snowflake/config.toml
+          echo "CONNECTION_NAME=default" >> $GITHUB_ENV
+          echo "connection-name=default" >> $GITHUB_OUTPUT
+        else
+          export SNOW_CONFIG_B64="${{ inputs.snow_config_b64 }}"
+          bash /usr/local/bin/github-runner_v1.sh
+          CONNECTION_NAME=$(grep -oP '^\[connections\.\K[^\]]+' $HOME/.snowflake/config.toml | head -1)
+          echo "CONNECTION_NAME=$CONNECTION_NAME" >> $GITHUB_ENV
+          echo "connection-name=$CONNECTION_NAME" >> $GITHUB_OUTPUT
+        fi
+        if [[ -f "$HOME/.sonar_env" ]]; then
+          grep '^SONAR_' "$HOME/.sonar_env" >> $GITHUB_ENV || true
+        fi

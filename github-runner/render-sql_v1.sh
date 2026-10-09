@@ -15,7 +15,7 @@
 #
 # Skips gracefully if the SQL file does not exist (exit 0).
 # -----------------------------------------------------------------------------
-set -e
+set -Eeuo pipefail
 
 for ARG in "$@"; do
   case $ARG in

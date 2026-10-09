@@ -1,5 +1,9 @@
 """DataOps custom rules for SQLFluff — mirrors SonarQube regex rules."""
 
+from __future__ import annotations
+
+from typing import Any
+
 from sqlfluff.core.plugin import hookimpl
 from sqlfluff.core.rules import BaseRule, LintResult, RuleGhost
 import regex as re
@@ -205,7 +209,7 @@ RULES = [
 ]
 
 
-def scan_raw_sql(raw_sql, rules):
+def scan_raw_sql(raw_sql: str, rules: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Scan raw SQL text against all regex rules. Returns list of violations."""
     violations = []
     lines = raw_sql.split("\n")
