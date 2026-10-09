@@ -73,8 +73,8 @@ for k, v in merged.items():
 ")
 
 echo "Running $SQL_FILE (target=$TARGET, connection=$CONNECTION_NAME)"
-echo "Variables: $(echo $D_FLAGS | tr '\n' ' ')"
+echo "Variables: $(echo "$D_FLAGS" | tr '\n' ' ')"
 
-eval snow sql -f "$SQL_FILE" -c "$CONNECTION_NAME" --enable-templating JINJA $D_FLAGS
+eval snow sql -f "$SQL_FILE" -c "$CONNECTION_NAME" --enable-templating JINJA "$D_FLAGS"
 
 echo "✅ $SQL_FILE completed."

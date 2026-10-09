@@ -34,10 +34,9 @@ CLONE_SCHEMA="${SOURCE_SCHEMA}_${RELEASE_NUM}"
 
 echo "Dropping clone: ${SOURCE_DATABASE}.${CLONE_SCHEMA}"
 
-snow sql -c "$CONNECTION_NAME" -q "
+if snow sql -c "$CONNECTION_NAME" -q "
 DROP SCHEMA IF EXISTS ${SOURCE_DATABASE}.${CLONE_SCHEMA};
-"
-if [ $? -eq 0 ]; then
+"; then
   echo "Dropped: ${SOURCE_DATABASE}.${CLONE_SCHEMA}"
 else
   echo "Drop failed (non-critical)"

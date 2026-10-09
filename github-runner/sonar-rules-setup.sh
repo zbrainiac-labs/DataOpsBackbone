@@ -34,7 +34,7 @@ create_rule() {
   EXISTING=$(curl -sf -u "$SONAR_AUTH" "$SONAR_HOST/api/rules/show?key=txt:$KEY" 2>/dev/null | python3 -c "import sys,json; print('exists')" 2>/dev/null || echo "")
 
   if [[ "$EXISTING" != "exists" ]]; then
-    ESCAPED_MSG=$(echo "$NAME" | sed 's/;/%3B/g')
+    ESCAPED_MSG="${NAME//;/%3B}"
     HTTP_CODE=$(curl -s -o /tmp/sonar_response.json -w "%{http_code}" -u "$SONAR_AUTH" -X POST "$SONAR_HOST/api/rules/create" \
       -d "customKey=$KEY" \
       --data-urlencode "name=$NAME" \
@@ -77,7 +77,7 @@ create_multiline_rule() {
   EXISTING=$(curl -sf -u "$SONAR_AUTH" "$SONAR_HOST/api/rules/show?key=txt:$KEY" 2>/dev/null | python3 -c "import sys,json; print('exists')" 2>/dev/null || echo "")
 
   if [[ "$EXISTING" != "exists" ]]; then
-    ESCAPED_MSG=$(echo "$NAME" | sed 's/;/%3B/g')
+    ESCAPED_MSG="${NAME//;/%3B}"
     HTTP_CODE=$(curl -s -o /tmp/sonar_response.json -w "%{http_code}" -u "$SONAR_AUTH" -X POST "$SONAR_HOST/api/rules/create" \
       -d "customKey=$KEY" \
       --data-urlencode "name=$NAME" \

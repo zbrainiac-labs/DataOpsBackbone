@@ -102,7 +102,8 @@ SELECT
   FROM SNOWFLAKE.ACCOUNT_USAGE.OBJECT_DEPENDENCIES dep_obj
    WHERE dep_obj.referenced_database = '$SOURCE_DATABASE';" > "$FINAL_OUTPUT_DIR/deps.csv"
 
-if [ $? -eq 0 ]; then
+DEPS_EXIT=$?
+if [ $DEPS_EXIT -eq 0 ]; then
   echo "✅ Dependencies written to $FINAL_OUTPUT_DIR/deps.csv"
 else
   echo "❌ Error writing output to $FINAL_OUTPUT_DIR/deps.csv"
@@ -122,9 +123,9 @@ fi
   echo "-- Generated: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
   echo "-- Connection: $CONNECTION_NAME"
   echo "-- ============================================================"
-  snow sql -c $CONNECTION_NAME -q "
+  snow sql -c "$CONNECTION_NAME" -q "
 SELECT GET_DDL('DATABASE','$SOURCE_DATABASE')" --format=csv | tail -n +2 | tr -d '"'
-} | python3 "$DDL_FILTER" > $FINAL_OUTPUT_DIR/ddl.sql
+} | python3 "$DDL_FILTER" > "$FINAL_OUTPUT_DIR/ddl.sql"
 
 echo "Done: $FINAL_OUTPUT_DIR/deps.csv + $FINAL_OUTPUT_DIR/ddl.sql"
 

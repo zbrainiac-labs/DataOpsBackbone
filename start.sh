@@ -23,6 +23,7 @@ case "$ARCH" in
     ;;
 esac
 
+# shellcheck source=/dev/null
 source .env
 
 if [[ -n "$SNOW_ACCOUNT" && -n "$SNOW_USER" && -n "$SNOW_PAT" ]]; then
@@ -39,11 +40,13 @@ authenticator = "programmatic_access_token"
 token = "${SNOW_PAT}"
 EOF
 )
-  export SNOW_CONFIG_B64=$(echo "$SNOW_CONFIG" | base64 | tr -d '\n')
+  SNOW_CONFIG_B64=$(echo "$SNOW_CONFIG" | base64 | tr -d '\n')
+  export SNOW_CONFIG_B64
   echo "SNOW_CONFIG_B64 generated for connection: $CONNECTION_NAME"
 elif [[ -f SNOW_CONFIG_B64 ]]; then
   echo "Using existing SNOW_CONFIG_B64 file..."
-  export SNOW_CONFIG_B64=$(cat SNOW_CONFIG_B64)
+  SNOW_CONFIG_B64=$(cat SNOW_CONFIG_B64)
+  export SNOW_CONFIG_B64
 else
   echo "WARNING: No Snowflake credentials found. Set SNOW_ACCOUNT/SNOW_USER/SNOW_PAT in .env or provide SNOW_CONFIG_B64 file."
 fi

@@ -40,6 +40,7 @@ echo "============================================"
 echo ""
 echo "[Phase 1] Building Docker images..."
 cd "$PROJECT_ROOT"
+# shellcheck source=/dev/null
 source .env
 
 ARCH=$(uname -m)
@@ -63,7 +64,7 @@ docker compose --env-file .env up -d
 
 echo "Waiting for SonarQube to be ready..."
 STATUS=""
-for i in $(seq 1 60); do
+for _ in $(seq 1 60); do
   STATUS=$(curl -sf http://localhost:9000/api/system/status 2>/dev/null \
     | python3 -c "import sys,json; print(json.load(sys.stdin).get('status',''))" 2>/dev/null || true)
   if [[ "$STATUS" == "UP" ]]; then
@@ -128,7 +129,7 @@ docker compose cp "$CONSUMER_REPO/." runner1:/tmp/e2e-output/
 CONSUMER_TEST_FILE=$(find "$CONSUMER_REPO" -name '*.sqltest' -type f 2>/dev/null | head -1 || true)
 if [[ -n "$CONSUMER_TEST_FILE" ]]; then
   # Derive the relative path within the consumer repo
-  RELATIVE_TEST_PATH="${CONSUMER_TEST_FILE#$CONSUMER_REPO/}"
+  RELATIVE_TEST_PATH="${CONSUMER_TEST_FILE#"$CONSUMER_REPO"/}"
   CONTAINER_TEST_FILE="/tmp/e2e-output/$RELATIVE_TEST_PATH"
 else
   CONTAINER_TEST_FILE="/usr/local/bin/tests.sqltest"

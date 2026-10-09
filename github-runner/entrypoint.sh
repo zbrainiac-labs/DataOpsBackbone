@@ -38,6 +38,7 @@ if [[ -n "${SONAR_ADMIN_PASS:-}" ]]; then
     echo "Auto-generating SonarQube token..."
     bash /usr/local/bin/sonar-token-init.sh || echo "Sonar token init skipped"
     if [[ -f "$HOME/.sonar_env" ]]; then
+        # shellcheck source=/dev/null
         source "$HOME/.sonar_env"
     fi
     echo "Setting up SonarQube rules..."
@@ -122,6 +123,7 @@ echo "Starting GitHub Actions runner..."
 RUNNER_PID=$!
 
 # Monitor for session conflict
+# shellcheck disable=SC2094
 ( tail -n 0 -F /tmp/runner-output.log & echo $! >&3 ) 3>tail.pid | while read -r line; do
     echo "$line"
     if [[ "$line" == *"A session for this runner already exists."* ]]; then

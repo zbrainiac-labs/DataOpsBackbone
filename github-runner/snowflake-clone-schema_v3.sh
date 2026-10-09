@@ -37,10 +37,9 @@ CLONE_SCHEMA="${SOURCE_SCHEMA}_${RELEASE_NUM}"
 
 echo "Cloning: ${SOURCE_DATABASE}.${SOURCE_SCHEMA} -> ${SOURCE_DATABASE}.${CLONE_SCHEMA}"
 
-snow sql -c "$CONNECTION_NAME" -q "
+if ! snow sql -c "$CONNECTION_NAME" -q "
 CREATE OR REPLACE SCHEMA ${SOURCE_DATABASE}.${CLONE_SCHEMA} CLONE ${SOURCE_DATABASE}.${SOURCE_SCHEMA};
-"
-if [ $? -ne 0 ]; then
+"; then
   echo "Clone failed"
   exit 1
 fi
@@ -48,10 +47,9 @@ echo "Clone created: ${SOURCE_DATABASE}.${CLONE_SCHEMA}"
 
 if [[ -n "${PROJECT_KEY:-}" ]]; then
   echo "Creating DCM project: ${SOURCE_DATABASE}.${CLONE_SCHEMA}.${PROJECT_KEY}"
-  snow sql -c "$CONNECTION_NAME" -q "
+  if ! snow sql -c "$CONNECTION_NAME" -q "
 CREATE DCM PROJECT IF NOT EXISTS ${SOURCE_DATABASE}.${CLONE_SCHEMA}.${PROJECT_KEY};
-"
-  if [ $? -ne 0 ]; then
+"; then
     echo "DCM project creation failed (non-critical)"
   fi
 fi

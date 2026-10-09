@@ -15,7 +15,7 @@ SONAR_ADMIN_PASS="${SONAR_ADMIN_PASS:-ThisIsNotSecure1234!}"
 TOKEN_NAME="runner-${RUNNER_NAME:-${GITHUB_REPO:-default}}-$(date +%Y%m%d)"
 
 echo "Waiting for SonarQube at $SONAR_HOST..."
-for i in $(seq 1 60); do
+for _ in $(seq 1 60); do
   STATUS=$(curl -sf "$SONAR_HOST/api/system/status" 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('status',''))" 2>/dev/null || true)
   if [[ "$STATUS" == "UP" ]]; then
     echo "SonarQube is UP."

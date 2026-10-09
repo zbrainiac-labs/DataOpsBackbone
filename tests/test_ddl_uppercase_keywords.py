@@ -32,7 +32,7 @@ class TestFixSpacing:
         assert fix_spacing("count(*)") == "count (*)"
 
     def test_removes_extra_spaces_in_parens(self) -> None:
-        assert fix_spacing("(  a  )") == "(a)")
+        assert fix_spacing("(  a  )") == "(a)"
 
 
 class TestExpandInlineSelect:

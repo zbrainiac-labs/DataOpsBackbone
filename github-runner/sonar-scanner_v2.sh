@@ -2,6 +2,7 @@
 set -Eeuo pipefail
 
 if [[ -z "${SONAR_TOKEN:-}" && -f "$HOME/.sonar_env" ]]; then
+  # shellcheck source=/dev/null
   source "$HOME/.sonar_env"
 fi
 
@@ -40,18 +41,17 @@ else
   PROJECT_BASE_DIR="$(pwd)"
 fi
 
+EXTRA_ARGS=()
 SQLFLUFF_ISSUES="$PROJECT_BASE_DIR/sqlfluff_issues.json"
-EXTERNAL_ISSUES_ARG=""
 if [[ -f "$SQLFLUFF_ISSUES" ]]; then
   echo "SQLFluff issues found: $SQLFLUFF_ISSUES"
-  EXTERNAL_ISSUES_ARG="-Dsonar.externalIssuesReportPaths=$SQLFLUFF_ISSUES"
+  EXTRA_ARGS+=("-Dsonar.externalIssuesReportPaths=$SQLFLUFF_ISSUES")
 fi
 
-TEST_REPORT_ARG=""
 SONAR_TEST_REPORT="${PROJECT_BASE_DIR}/sonar_test_report.xml"
 if [[ -f "$SONAR_TEST_REPORT" ]]; then
   echo "Test execution report found: $SONAR_TEST_REPORT"
-  TEST_REPORT_ARG="-Dsonar.testExecutionReportPaths=$SONAR_TEST_REPORT"
+  EXTRA_ARGS+=("-Dsonar.testExecutionReportPaths=$SONAR_TEST_REPORT")
 fi
 
 echo "Running sonar-scanner..."
@@ -64,8 +64,7 @@ PROJECT_VERSION="${PROJECT_VERSION:-$(git -C "$PROJECT_BASE_DIR" describe --tags
   -Dsonar.scm.disabled=true \
   -Dsonar.sources=. \
   -Dsonar.text.inclusions="**/*.sql,**/*.json" \
-  -Dsonar.exclusions=".git/**,**/*.md,**/*.csv,**/*.yml,**/*.yaml,**/*.ipynb,**/*.sqltest,**/.DS_Store" \
+  -Dsonar.exclusions=".git/**,**/venv/**,**/node_modules/**,**/__pycache__/**,**/*.md,**/*.csv,**/*.yml,**/*.yaml,**/*.ipynb,**/*.sqltest,**/.DS_Store,**/*.p8,**/*.pub,**/*.pem,**/*.js,**/*.css,**/*.html,**/*.map" \
   -Dsonar.sourceEncoding="UTF-8" \
-  $EXTERNAL_ISSUES_ARG \
-  $TEST_REPORT_ARG \
+  "${EXTRA_ARGS[@]}" \
   -Dsonar.token="$SONAR_TOKEN"

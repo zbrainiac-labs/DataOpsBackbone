@@ -1,0 +1,17 @@
+# Pipeline workflows and actions
+.github/workflows/         @zbrainiac-labs/platform
+.github/actions/           @zbrainiac-labs/platform
+
+# Docker infrastructure
+github-runner/Dockerfile   @zbrainiac-labs/platform
+sonarqube/Dockerfile       @zbrainiac-labs/platform
+docker-compose*.yml        @zbrainiac-labs/platform
+
+# Security-sensitive scripts
+github-runner/sonar-token-init.sh   @zbrainiac-labs/platform
+github-runner/entrypoint.sh         @zbrainiac-labs/platform
+start.sh                            @zbrainiac-labs/platform
+
+# SQL rule framework
+sqlfluff/                  @zbrainiac-labs/platform
+sonarqube/                 @zbrainiac-labs/platform

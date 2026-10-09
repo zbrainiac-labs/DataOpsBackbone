@@ -27,7 +27,8 @@ elif [[ "$(uname)" == "Darwin" ]]; then
   export OUTPUT_DIR="${OUTPUT_DIR:-${BASE_WORKSPACE}/${PROJECT_KEY}}"
 else
   echo "Unknown system, defaulting to current dir"
-  export BASE_WORKSPACE="$(pwd)"
+  BASE_WORKSPACE="$(pwd)"
+  export BASE_WORKSPACE
   export OUTPUT_DIR="${OUTPUT_DIR:-$(pwd)}"
 fi
 

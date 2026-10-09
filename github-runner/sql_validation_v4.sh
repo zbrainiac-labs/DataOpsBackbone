@@ -67,16 +67,13 @@ echo "TESTSUITE_NAME: $TESTSUITE_NAME"
 if [[ -f /.dockerenv ]] || grep -qE '/docker/|/lxc/' /proc/1/cgroup 2>/dev/null; then
   echo "Running inside Docker container"
   REPORT_DIR="/home/docker/sql-report-vol"
-  RUNTIME="container"
   CTRF_REPORT_DIR="/home/docker/sql-unit-reports"
 elif [[ "$(uname)" == "Darwin" ]]; then
   echo "Running on macOS"
-  RUNTIME="macos"
   REPORT_DIR="$(pwd)/sql-report-vol"
   CTRF_REPORT_DIR="$(pwd)/sql-unit-reports"
 else
   echo "Unknown system, defaulting to current dir"
-  RUNTIME="unknown"
   REPORT_DIR="$(pwd)/sql-report-vol"
   CTRF_REPORT_DIR="$(pwd)/sql-unit-reports"
 fi
@@ -84,8 +81,7 @@ fi
 mkdir -p "$CTRF_REPORT_DIR"
 CTRF_REPORT_DIR="$(cd "$CTRF_REPORT_DIR" && pwd)"
 REPORT_SUBDIR="$CTRF_REPORT_DIR/$UTC_TIMESTAMP"
-mkdir -p "$REPORT_SUBDIR"
-if [ $? -ne 0 ]; then
+if ! mkdir -p "$REPORT_SUBDIR"; then
   echo "❌ Failed to create directory: $REPORT_SUBDIR"
   REPORT_SUBDIR="$CTRF_REPORT_DIR"
 fi
@@ -115,21 +111,22 @@ run_test() {
     EXIT_CODE=0
   else
     SQL_QUERY_PROCESSED=$(echo "$SQL_QUERY" | sed "s/{{DATABASE}}/$CLONE_DATABASE/g" | sed "s/{{SCHEMA}}/$CLONE_SCHEMA_WITH_RELEASE/g")
-    local STDERR_FILE=$(mktemp)
+    local STDERR_FILE
+    STDERR_FILE=$(mktemp)
     OUTPUT=$(snow sql -q "$SQL_QUERY_PROCESSED" -c "$CONNECTION_NAME" --format=json 2>"$STDERR_FILE")
     CLI_EXIT_CODE=$?
 
     if [ $CLI_EXIT_CODE -eq 0 ]; then
-      RESULT=$(echo "$OUTPUT" | jq -r '.[0].RESULT' 2>/dev/null)
-      if [ $? -ne 0 ]; then
+      if RESULT=$(echo "$OUTPUT" | jq -r '.[0].RESULT' 2>/dev/null); then
+        EXIT_CODE=0
+      else
         echo "❌ Failed to parse JSON output: $OUTPUT"
         EXIT_CODE=1
         RESULT="JSON_PARSE_ERROR"
-      else
-        EXIT_CODE=0
       fi
     else
-      local STDERR_CONTENT=$(cat "$STDERR_FILE" | strip_ansi)
+      local STDERR_CONTENT
+      STDERR_CONTENT=$(strip_ansi < "$STDERR_FILE")
       echo "❌ Snow CLI failed with exit code $CLI_EXIT_CODE: $STDERR_CONTENT"
       EXIT_CODE=$CLI_EXIT_CODE
       RESULT="CLI_ERROR"
