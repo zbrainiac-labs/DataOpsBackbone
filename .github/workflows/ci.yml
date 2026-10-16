@@ -38,7 +38,7 @@ jobs:
       - name: Build runner image
         run: docker build -t dataops-runner:ci ./github-runner
       - name: Trivy scan runner
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: dataops-runner:ci
           severity: CRITICAL,HIGH
@@ -46,7 +46,7 @@ jobs:
       - name: Build sonarqube image
         run: docker build -t dataops-sonarqube:ci ./sonarqube
       - name: Trivy scan sonarqube
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: dataops-sonarqube:ci
           severity: CRITICAL,HIGH
