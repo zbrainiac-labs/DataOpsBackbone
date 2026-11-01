@@ -124,7 +124,7 @@ jobs:
 
       - name: Setup Snowflake connection
         id: sf
-        uses: ./.github/actions/snowflake-connect
+        uses: zbrainiac-labs/DataOpsBackbone/.github/actions/snowflake-connect@main
         with:
           use_oidc: ${{ inputs.USE_OIDC }}
           snowflake_account: ${{ inputs.SNOWFLAKE_ACCOUNT }}
@@ -162,7 +162,7 @@ jobs:
           fetch-depth: 0
 
       - name: Setup Snowflake connection
-        uses: ./.github/actions/snowflake-connect
+        uses: zbrainiac-labs/DataOpsBackbone/.github/actions/snowflake-connect@main
         with:
           use_oidc: ${{ inputs.USE_OIDC }}
           snowflake_account: ${{ inputs.SNOWFLAKE_ACCOUNT }}
@@ -231,7 +231,7 @@ jobs:
           fetch-depth: 0
 
       - name: Setup Snowflake connection
-        uses: ./.github/actions/snowflake-connect
+        uses: zbrainiac-labs/DataOpsBackbone/.github/actions/snowflake-connect@main
         with:
           use_oidc: ${{ inputs.USE_OIDC }}
           snowflake_account: ${{ inputs.SNOWFLAKE_ACCOUNT }}
@@ -330,7 +330,7 @@ jobs:
           fetch-depth: 0
 
       - name: Setup Snowflake connection
-        uses: ./.github/actions/snowflake-connect
+        uses: zbrainiac-labs/DataOpsBackbone/.github/actions/snowflake-connect@main
         with:
           use_oidc: ${{ inputs.USE_OIDC }}
           snowflake_account: ${{ inputs.SNOWFLAKE_ACCOUNT }}
@@ -386,7 +386,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
 
       - name: Setup Snowflake connection
-        uses: ./.github/actions/snowflake-connect
+        uses: zbrainiac-labs/DataOpsBackbone/.github/actions/snowflake-connect@main
         with:
           use_oidc: ${{ inputs.USE_OIDC }}
           snowflake_account: ${{ inputs.SNOWFLAKE_ACCOUNT }}
@@ -427,7 +427,7 @@ jobs:
           fetch-depth: 0
 
       - name: Setup Snowflake connection
-        uses: ./.github/actions/snowflake-connect
+        uses: zbrainiac-labs/DataOpsBackbone/.github/actions/snowflake-connect@main
         with:
           use_oidc: ${{ inputs.USE_OIDC }}
           snowflake_account: ${{ inputs.SNOWFLAKE_ACCOUNT }}
