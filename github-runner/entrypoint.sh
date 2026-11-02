@@ -39,20 +39,45 @@ gh_token() {  # $1 = registration-token | remove-token
     "${API_BASE}/actions/runners/$1" | jq -r .token
 }
 
+# Remove offline registrations left behind by earlier containers of this pool
+# (killed/recreated containers can't always deregister). Only touches runners
+# named runner-* that carry our label, so other self-hosted runners are safe.
+prune_offline_runners() {
+  [[ -n "$RUNNER_LABELS" ]] || return 0
+  local ids id
+  ids=$(curl -sf -H "Authorization: token ${GH_TOKEN}" -H "Accept: application/vnd.github+json" \
+    "${API_BASE}/actions/runners?per_page=100" \
+    | jq -r --arg want "$RUNNER_LABELS" '.runners[]
+        | select(.status == "offline" and (.name | startswith("runner-")) and any(.labels[]; .name == $want))
+        | .id') || { echo "Could not list runners for pruning (skipped)"; return 0; }
+  for id in $ids; do
+    if curl -sf -o /dev/null -X DELETE -H "Authorization: token ${GH_TOKEN}" \
+        -H "Accept: application/vnd.github+json" "${API_BASE}/actions/runners/${id}"; then
+      echo "Pruned offline runner registration ${id}"
+    fi
+  done
+}
+
 # Deregister if stopped while idle (an ephemeral runner that ran a job is
-# already removed by GitHub; the call then simply fails and is ignored).
+# already removed by GitHub). One API call instead of `config.sh remove`, which
+# can't finish once dumb-init has signalled the runner too. Leftovers from hard
+# kills are pruned by the next runner start.
 cleanup() {
   echo "Stopping runner ${RUNNER_NAME}..."
-  if [[ -n "${RUNNER_PID:-}" ]]; then kill "$RUNNER_PID" 2>/dev/null || true; fi
-  if [[ -f .runner ]]; then
-    ./config.sh remove --token "$(gh_token remove-token)" >/dev/null 2>&1 || true
+  local id
+  id=$(grep -o '"agentId": *[0-9]*' .runner 2>/dev/null | grep -o '[0-9]*$' || true)  # .runner has a BOM -> no jq
+  if [[ -n "$id" ]] && curl -sf -o /dev/null --max-time 5 -X DELETE -H "Authorization: token ${GH_TOKEN}" \
+      -H "Accept: application/vnd.github+json" "${API_BASE}/actions/runners/${id}"; then
+    echo "Deregistered runner ${RUNNER_NAME} (id ${id})"
   fi
+  if [[ -n "${RUNNER_PID:-}" ]]; then kill "$RUNNER_PID" 2>/dev/null || true; fi
   exit 0
 }
 trap cleanup INT TERM
 
 # Local leftovers from a previous ephemeral run in this same container.
 rm -f .runner .credentials .credentials_rsaparams
+prune_offline_runners
 
 REG_TOKEN=$(gh_token registration-token || true)
 [[ -n "$REG_TOKEN" && "$REG_TOKEN" != "null" ]] || { echo "ERROR: failed to get registration token"; exit 1; }

@@ -77,17 +77,7 @@ COPY *.sh /usr/local/bin/
 COPY *.py /usr/local/bin/
 COPY *.sqltest /usr/local/bin/
 COPY *.cfg /usr/local/bin/
-# Transition: old versioned script names -> new names (remove after one release)
-RUN chmod +x /usr/local/bin/*.sh && \
-  cd /usr/local/bin && \
-  ln -s snowflake-config-setup.sh github-runner_v1.sh && \
-  ln -s render-sql.sh render-sql_v1.sh && \
-  ln -s snowflake-clone-schema.sh snowflake-clone-schema_v3.sh && \
-  ln -s snowflake-drop-clone-schema.sh snowflake-drop-clone-schema_v3.sh && \
-  ln -s snowflake-deploy-dcm.sh snowflake-deploy-dcm_v1.sh && \
-  ln -s snowflake-extract-dependencies.sh snowflake-extract-dependencies_v1.sh && \
-  ln -s sonar-scan.sh sonar-scanner_v2.sh && \
-  ln -s sql-validate.sh sql_validation_v4.sh
+RUN chmod +x /usr/local/bin/*.sh
 
 COPY unitth.jar /usr/local/bin/
 COPY unitth.properties /usr/local/bin/

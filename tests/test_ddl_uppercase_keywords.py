@@ -67,3 +67,42 @@ class TestProcessLines:
         assert len(result) >= 3
         assert result[0] == "CREATE TABLE FOO;"
         assert result[1] == "-- comment"
+
+
+class TestRegexRewriteEquivalence:
+    """Edge cases pinned from the former backtracking regexes (same output, linear time)."""
+
+    def test_joins_split_on_own_lines(self) -> None:
+        line = ") AS SELECT a, b FROM t1 LEFT JOIN t2 ON x INNER  JOIN t3 ON y JOIN t4 ON z"
+        assert expand_inline_select(line) == [
+            ") AS SELECT",
+            "    a,",
+            "    b",
+            "FROM t1",
+            "LEFT JOINt2 ON x",
+            "INNER  JOINt3 ON y",
+            "JOINt4 ON z",
+        ]
+
+    def test_first_from_wins(self) -> None:
+        assert expand_inline_select(") AS SELECT a FROM t WHERE x FROM y")[2] == "FROM t WHERE x FROM y"
+
+    def test_whitespace_only_columns_like_before(self) -> None:
+        assert expand_inline_select(") AS  SELECT    FROM  t") == [") AS  SELECT", "    ", "FROM t"]
+
+    def test_from_without_table_is_not_expanded(self) -> None:
+        line = ")AS SELECT a FROM "
+        assert expand_inline_select(line) == [line]
+
+    def test_fix_spacing_before_paren(self) -> None:
+        assert fix_spacing("x(a   )") == "x (a)"
+        assert fix_spacing("   )") == ")"
+
+    def test_linear_time_on_pathological_input(self) -> None:
+        import time
+
+        start = time.perf_counter()
+        expand_inline_select(") AS SELECT " + "a " * 3000 + " " * 3000 + "x")
+        fix_spacing(" " * 20000 + "x")
+        expand_inline_select(") AS SELECT a FROM t" + " " * 20000 + "x")
+        assert time.perf_counter() - start < 1.0
