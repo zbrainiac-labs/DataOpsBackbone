@@ -11,7 +11,7 @@ set -Eeuo pipefail
 SNOW_DIR="$HOME/.snowflake"
 mkdir -p "$SNOW_DIR"
 
-if [[ -z "$SNOW_CONFIG_B64" ]]; then
+if [[ -z "${SNOW_CONFIG_B64:-}" ]]; then
   echo "Missing required environment variable SNOW_CONFIG_B64."
   exit 1
 fi
@@ -20,7 +20,7 @@ echo "Decoding Snowflake config..."
 echo "$SNOW_CONFIG_B64" | base64 --decode > "$SNOW_DIR/config.toml"
 chmod 600 "$SNOW_DIR/config.toml"
 
-if [[ -z "$CONNECTION_NAME" || "$CONNECTION_NAME" == "default_value_here" ]]; then
+if [[ -z "${CONNECTION_NAME:-}" || "$CONNECTION_NAME" == "default_value_here" ]]; then
   CONNECTION_NAME=$(grep -oP '^\[connections\.\K[^\]]+' "$SNOW_DIR/config.toml" | head -1)
   if [[ -n "$CONNECTION_NAME" ]]; then
     echo "Auto-detected CONNECTION_NAME: $CONNECTION_NAME"

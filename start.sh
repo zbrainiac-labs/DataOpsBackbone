@@ -66,5 +66,15 @@ docker build \
   -t brainiac/sonarqube \
   ./sonarqube
 
-echo "Starting all services with docker compose..."
-docker compose --env-file .env up
+echo "Starting all services with docker compose (detached)..."
+# Detached: the script exits once services are up/healthy instead of staying
+# attached to the containers (previously one ./start.sh process per deploy).
+PROFILES=()
+if [[ "${1:-}" == "--with-observability" ]]; then
+  PROFILES=(--profile observability)
+  export OTEL_EXPORTER_OTLP_ENDPOINT="jaeger:4317"
+  echo "Observability enabled: Jaeger UI on http://localhost:16686"
+fi
+docker compose --env-file .env ${PROFILES[@]+"${PROFILES[@]}"} up -d --wait --remove-orphans
+docker compose --env-file .env ${PROFILES[@]+"${PROFILES[@]}"} ps
+echo "Logs: docker compose logs -f [service]"

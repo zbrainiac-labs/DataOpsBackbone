@@ -1,139 +1,66 @@
 #!/bin/bash
+# -----------------------------------------------------------------------------
+# Ephemeral GitHub Actions runner: registers, runs exactly one job, exits.
+# Docker (restart: always) then starts a fresh registration, so a rebuild or
+# restart never leaves queued jobs bound to a stale runner session.
+#
+# SonarQube token + rules are prepared once by the sonar-init service; the
+# token is shared read-only via /sonar/.sonar_env.
+# -----------------------------------------------------------------------------
 set -euo pipefail
 
-# Basic environment vars
 GH_TOKEN=${ACCESS_TOKEN:-}
 GITHUB_OWNER=${GITHUB_OWNER:-}
 GITHUB_REPO=${GITHUB_REPO:-}
 RUNNER_SCOPE=${RUNNER_SCOPE:-repo}
-RUNNER_NAME=${RUNNER_NAME:-"github-runner-$(tr -dc A-Za-z0-9 </dev/urandom | head -c 8)"}
+RUNNER_NAME=${RUNNER_NAME:-"runner-$(hostname)"}
+RUNNER_LABELS=${RUNNER_LABELS:-}
 
+if [[ -z "$GH_TOKEN" || -z "$GITHUB_OWNER" ]]; then
+  echo "ERROR: ACCESS_TOKEN and GITHUB_OWNER must be set"; exit 1
+fi
 if [[ "$RUNNER_SCOPE" == "org" ]]; then
-    API_BASE="https://api.github.com/orgs/${GITHUB_OWNER}"
-    CONFIG_URL="https://github.com/${GITHUB_OWNER}"
+  API_BASE="https://api.github.com/orgs/${GITHUB_OWNER}"
+  CONFIG_URL="https://github.com/${GITHUB_OWNER}"
 else
-    API_BASE="https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}"
-    CONFIG_URL="https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}"
+  [[ -n "$GITHUB_REPO" ]] || { echo "ERROR: GITHUB_REPO must be set for repo-level runners"; exit 1; }
+  API_BASE="https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}"
+  CONFIG_URL="https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}"
 fi
 
-echo "GITHUB_OWNER: ${GITHUB_OWNER}"
-echo "GITHUB_REPO: ${GITHUB_REPO}"
-echo "Runner name: ${RUNNER_NAME}"
+cd /home/docker/actions-runner
 
-cd /home/docker/actions-runner || { echo "ERROR: Runner directory not found"; exit 1; }
+[[ -d /home/docker/sql-report-vol ]] && { sudo chown -R docker:docker /home/docker/sql-report-vol || true; }
+[[ -f /sonar/.sonar_env ]] && ln -sf /sonar/.sonar_env "$HOME/.sonar_env"
+[[ -n "${SNOW_CONFIG_B64:-}" ]] && bash /usr/local/bin/snowflake-config-setup.sh
 
-echo "🔧 Checking sql-report-vol ownership..."
-if [ -d /home/docker/sql-report-vol ]; then
-    sudo chown -R docker:docker /home/docker/sql-report-vol || echo "Could not chown volume"
-else
-    echo "Volume directory not found at runtime"
-fi
-
-if [[ -n "${SNOW_CONFIG_B64:-}" ]]; then
-    echo "Setting up Snowflake config..."
-    bash /usr/local/bin/github-runner_v1.sh
-fi
-
-if [[ -n "${SONAR_ADMIN_PASS:-}" ]]; then
-    echo "Auto-generating SonarQube token..."
-    bash /usr/local/bin/sonar-token-init.sh || echo "Sonar token init skipped"
-    if [[ -f "$HOME/.sonar_env" ]]; then
-        # shellcheck source=/dev/null
-        source "$HOME/.sonar_env"
-    fi
-    echo "Setting up SonarQube rules..."
-    bash /usr/local/bin/sonar-rules-setup.sh || echo "Sonar rules setup skipped"
-fi
-# Clean up runner on termination
-cleanup() {
-    echo "Caught termination signal. Cleaning up runner..."
-
-    if [ -f .runner ]; then
-        echo "Fetching removal token..."
-        REMOVE_TOKEN=$(curl -s -X POST \
-            -H "Authorization: token ${GH_TOKEN}" \
-            -H "Accept: application/vnd.github+json" \
-            "${API_BASE}/actions/runners/remove-token" \
-            | jq -r .token)
-
-        if [[ -n "${REMOVE_TOKEN}" && "${REMOVE_TOKEN}" != "null" ]]; then
-            ./config.sh remove --token "${REMOVE_TOKEN}" || echo "Runner removal failed or was already removed"
-        else
-            echo "Failed to get removal token; skipping removal"
-        fi
-    else
-        echo "No runner config found; skipping removal"
-    fi
-
-    exit 0
+gh_token() {  # $1 = registration-token | remove-token
+  curl -sf -X POST -H "Authorization: token ${GH_TOKEN}" -H "Accept: application/vnd.github+json" \
+    "${API_BASE}/actions/runners/$1" | jq -r .token
 }
 
-trap 'cleanup; exit 130' INT
-trap 'cleanup; exit 143' TERM
+# Deregister if stopped while idle (an ephemeral runner that ran a job is
+# already removed by GitHub; the call then simply fails and is ignored).
+cleanup() {
+  echo "Stopping runner ${RUNNER_NAME}..."
+  [[ -n "${RUNNER_PID:-}" ]] && kill "$RUNNER_PID" 2>/dev/null || true
+  if [[ -f .runner ]]; then
+    ./config.sh remove --token "$(gh_token remove-token)" >/dev/null 2>&1 || true
+  fi
+  exit 0
+}
+trap cleanup INT TERM
 
-# Validate required vars
-if [[ -z "${GH_TOKEN}" || -z "${GITHUB_OWNER}" ]]; then
-    echo "ERROR: ACCESS_TOKEN and GITHUB_OWNER must be set"
-    exit 1
-fi
-if [[ "$RUNNER_SCOPE" != "org" && -z "${GITHUB_REPO}" ]]; then
-    echo "ERROR: GITHUB_REPO must be set for repo-level runners"
-    exit 1
-fi
+# Local leftovers from a previous ephemeral run in this same container.
+rm -f .runner .credentials .credentials_rsaparams
 
-# Remove stale runner if it exists
-if [ -f .runner ]; then
-    echo "Runner already configured. Removing existing runner before re-registering..."
-    REMOVE_TOKEN=$(curl -s -X POST \
-        -H "Authorization: token ${GH_TOKEN}" \
-        -H "Accept: application/vnd.github+json" \
-        "${API_BASE}/actions/runners/remove-token" \
-        | jq -r .token)
+REG_TOKEN=$(gh_token registration-token || true)
+[[ -n "$REG_TOKEN" && "$REG_TOKEN" != "null" ]] || { echo "ERROR: failed to get registration token"; exit 1; }
 
-    if [[ -n "${REMOVE_TOKEN}" && "${REMOVE_TOKEN}" != "null" ]]; then
-        ./config.sh remove --token "${REMOVE_TOKEN}" || echo "Stale runner removal failed or already removed"
-    else
-        echo "Failed to get removal token; skipping stale removal"
-    fi
-fi
+./config.sh --url "$CONFIG_URL" --token "$REG_TOKEN" --name "$RUNNER_NAME" \
+  ${RUNNER_LABELS:+--labels "$RUNNER_LABELS"} --ephemeral --unattended --replace
 
-# Fetch registration token
-echo "Fetching registration token..."
-REG_TOKEN=$(curl -s -X POST \
-    -H "Authorization: token ${GH_TOKEN}" \
-    -H "Accept: application/vnd.github+json" \
-    "${API_BASE}/actions/runners/registration-token" \
-    | jq -r .token)
-
-if [[ -z "${REG_TOKEN}" || "${REG_TOKEN}" == "null" ]]; then
-    echo "ERROR: Failed to retrieve registration token. Check credentials and permissions."
-    exit 1
-fi
-
-echo "Registration token acquired. Configuring runner..."
-./config.sh --url "${CONFIG_URL}" \
-            --token "${REG_TOKEN}" \
-            --name "${RUNNER_NAME}" \
-            --unattended --replace
-
-# Start runner as PID 1
-echo "Starting GitHub Actions runner..."
-
-./run.sh > >(tee /tmp/runner-output.log) 2>&1 &
+echo "Starting ephemeral runner ${RUNNER_NAME}..."
+./run.sh &
 RUNNER_PID=$!
-
-# Monitor for session conflict
-# shellcheck disable=SC2094
-( tail -n 0 -F /tmp/runner-output.log & echo $! >&3 ) 3>tail.pid | while read -r line; do
-    echo "$line"
-    if [[ "$line" == *"A session for this runner already exists."* ]]; then
-        echo "❌ Detected session conflict. Killing runner process to force container restart..."
-        kill "$RUNNER_PID" 2>/dev/null
-        kill "$(cat tail.pid)" 2>/dev/null
-        sleep 2
-        exit 1
-    fi
-done
-
-# Wait for runner process to finish (if no conflict triggered it)
 wait "$RUNNER_PID"

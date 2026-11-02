@@ -1,9 +1,12 @@
 #!/bin/bash
+# Usage: sqlfluff-to-sonar.sh [PROJECT_DIR] [OUTPUT_FILE] [FAIL_THRESHOLD]
+#   FAIL_THRESHOLD > 0: exit 1 when CRITICAL issues >= threshold (0 = never fail)
 set +e
 set -u
 
 PROJECT_DIR="${1:-.}"
 OUTPUT_FILE="${2:-sqlfluff_issues.json}"
+FAIL_THRESHOLD="${3:-0}"
 
 echo "Running SQLFluff on $PROJECT_DIR..."
 
@@ -35,3 +38,13 @@ fi
 
 python3 "$CONVERTER" "$TMPJSON" "$OUTPUT_FILE"
 rm -f "$TMPJSON"
+
+if (( FAIL_THRESHOLD > 0 )); then
+  CRITICAL=$(jq '[.issues[]? | select(.severity == "CRITICAL")] | length' "$OUTPUT_FILE" 2>/dev/null || echo 0)
+  echo "::notice::SQLFluff critical violations: $CRITICAL (threshold: $FAIL_THRESHOLD)"
+  if (( CRITICAL >= FAIL_THRESHOLD )); then
+    echo "::error::SQLFluff critical violations ($CRITICAL) exceed threshold ($FAIL_THRESHOLD)"
+    exit 1
+  fi
+fi
+exit 0

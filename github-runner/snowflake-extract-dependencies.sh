@@ -4,13 +4,13 @@
 # Extract Snowflake schema dependencies using `snow` CLI
 # -----------------------------------------------------------------------------
 # Usage:
-# ./snowflake-extract-dependencies_v1.sh \
+# ./snowflake-extract-dependencies.sh \
 #   --SOURCE_DATABASE=DataOps \
 #   --SOURCE_SCHEMA=IOT_CLONE_42 \
 #   [--OUTPUT_DIR=/home/docker/actions-runner/_work/my_project/my_project] \
 #   --CONNECTION_NAME=ci_user_test
 #
-# ./snowflake-extract-dependencies_v1.sh --SOURCE_DATABASE=DATAOPS --SOURCE_SCHEMA=IOT_RAW_v001 --OUTPUT_DIR=/tmp --CONNECTION_NAME=sfseeurope-svc_cicd
+# ./snowflake-extract-dependencies.sh --SOURCE_DATABASE=DATAOPS --SOURCE_SCHEMA=IOT_RAW_v001 --OUTPUT_DIR=/tmp --CONNECTION_NAME=sfseeurope-svc_cicd
 #
 # -----------------------------------------------------------------------------
 

@@ -13,7 +13,13 @@
 #   4. validate — SQL validation tests
 #   5. cleanup  — drop clone schema (always runs if clone enabled)
 #   6. release  — deploy to original, package, GitHub release, summary
+#   7. finish   — pipeline-level trace span (always)
 #
+# Every `run:` step is wrapped in `otel_step` (github-runner/lib.sh, loaded via
+# BASH_ENV): begin/end log lines + an OpenTelemetry span per step. Spans are only
+# exported when the runner has OTEL_EXPORTER_OTLP_ENDPOINT set (fail-open).
+#
+# Local test without commit/push: bash local-ci/run.sh --dry-run
 # ======================================================
 
 name: DataOps Pipeline
@@ -67,6 +73,10 @@ on:
         type: string
         required: false
         description: 'Snowflake account identifier. Required when USE_OIDC=true. When USE_OIDC=false, uses the Snowflake CLI configured default connection.'
+      OTEL_ENABLED:
+        type: boolean
+        default: true
+        description: 'Emit OpenTelemetry spans per step (only if the runner has an OTLP endpoint configured)'
     secrets:
       SNOW_CONFIG_B64:
         required: true
@@ -74,6 +84,23 @@ on:
 concurrency:
   group: dataops-${{ github.ref }}-${{ inputs.SOURCE_DATABASE }}-${{ inputs.SOURCE_SCHEMA }}
   cancel-in-progress: false
+
+env:
+  PROJECT_KEY: ${{ github.event.repository.name }}
+  RELEASE_NUM: ${{ github.run_number }}
+  SONAR_BRANCH_NAME: ${{ github.ref_name }}
+  SONAR_HOST: http://sonarqube:9000
+  SOURCE_DATABASE: ${{ inputs.SOURCE_DATABASE }}
+  SOURCE_SCHEMA: ${{ inputs.SOURCE_SCHEMA }}
+  DCM_PROJECT_IDENTIFIER: ${{ inputs.DCM_PROJECT_IDENTIFIER }}
+  DCM_TARGET: ${{ inputs.DCM_TARGET }}
+  BASH_ENV: /usr/local/bin/lib.sh
+  OTEL_ENABLED: ${{ inputs.OTEL_ENABLED }}
+  OTEL_SERVICE_NAME: dataops-pipeline
+
+defaults:
+  run:
+    shell: bash
 
 jobs:
   # ============================================================
@@ -84,38 +111,32 @@ jobs:
     timeout-minutes: 10
     outputs:
       connection_name: ${{ steps.sf.outputs.connection-name }}
-    env:
-      PROJECT_KEY: ${{ github.event.repository.name }}
-      SOURCE_DATABASE: ${{ inputs.SOURCE_DATABASE }}
-      SOURCE_SCHEMA: ${{ inputs.SOURCE_SCHEMA }}
-      DCM_PROJECT_IDENTIFIER: ${{ inputs.DCM_PROJECT_IDENTIFIER }}
-      DCM_TARGET: ${{ inputs.DCM_TARGET }}
-    defaults:
-      run:
-        shell: bash
+      pipeline_start: ${{ steps.info.outputs.pipeline_start }}
     steps:
+      - name: "Trace: job start"
+        run: otel_job_begin
+
       - name: Show repo info
+        id: info
         run: |
           set -Eeuo pipefail
-          echo "PIPELINE_START=$(date +%s)" >> $GITHUB_ENV
-          echo "Project: $PROJECT_KEY"
-          echo "Branch: ${{ github.ref_name }}"
-          echo "Release #: ${{ github.run_number }}"
-          echo "DCM Project: $DCM_PROJECT_IDENTIFIER"
-          echo "Database: $SOURCE_DATABASE"
-          echo "Schema: $SOURCE_SCHEMA"
-          echo "DRY_RUN: ${{ inputs.DRY_RUN }}"
+          echo "pipeline_start=$(date +%s%N)" >> "$GITHUB_OUTPUT"
+          echo "Project: $PROJECT_KEY | Branch: $SONAR_BRANCH_NAME | Release #: $RELEASE_NUM"
+          echo "DCM Project: $DCM_PROJECT_IDENTIFIER | Database: $SOURCE_DATABASE | Schema: $SOURCE_SCHEMA"
+          echo "DRY_RUN: ${{ inputs.DRY_RUN }} | OTEL: $OTEL_ENABLED (endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:-none})"
 
       - name: Validate inputs
         run: |
           set -Eeuo pipefail
-          [[ "$SOURCE_DATABASE" =~ ^[A-Z0-9_]+$ ]] || { echo "::error::Invalid SOURCE_DATABASE: $SOURCE_DATABASE"; exit 1; }
-          [[ "$SOURCE_SCHEMA" =~ ^[A-Za-z0-9_]+$ ]] || { echo "::error::Invalid SOURCE_SCHEMA: $SOURCE_SCHEMA"; exit 1; }
-          [[ "$DCM_PROJECT_IDENTIFIER" =~ ^[A-Za-z0-9_.]+$ ]] || { echo "::error::Invalid DCM_PROJECT_IDENTIFIER: $DCM_PROJECT_IDENTIFIER"; exit 1; }
-          if [[ "${{ inputs.USE_OIDC }}" == "true" && -z "${{ inputs.SNOWFLAKE_ACCOUNT }}" ]]; then
-            echo "::error::SNOWFLAKE_ACCOUNT is required when USE_OIDC=true"
-            exit 1
-          fi
+          validate() {
+            [[ "$SOURCE_DATABASE" =~ ^[A-Z0-9_]+$ ]] || { echo "::error::Invalid SOURCE_DATABASE: $SOURCE_DATABASE"; return 1; }
+            [[ "$SOURCE_SCHEMA" =~ ^[A-Za-z0-9_]+$ ]] || { echo "::error::Invalid SOURCE_SCHEMA: $SOURCE_SCHEMA"; return 1; }
+            [[ "$DCM_PROJECT_IDENTIFIER" =~ ^[A-Za-z0-9_.]+$ ]] || { echo "::error::Invalid DCM_PROJECT_IDENTIFIER: $DCM_PROJECT_IDENTIFIER"; return 1; }
+            if [[ "${{ inputs.USE_OIDC }}" == "true" && -z "${{ inputs.SNOWFLAKE_ACCOUNT }}" ]]; then
+              echo "::error::SNOWFLAKE_ACCOUNT is required when USE_OIDC=true"; return 1
+            fi
+          }
+          otel_step prepare.validate -- validate
 
       - name: Checkout repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
@@ -134,10 +155,12 @@ jobs:
         if: ${{ !inputs.DRY_RUN }}
         run: |
           set -Eeuo pipefail
-          bash /usr/local/bin/render-sql_v1.sh \
-            --FILE=pre_deploy.sql \
-            --TARGET=$DCM_TARGET \
-            --CONNECTION_NAME=$CONNECTION_NAME
+          otel_step prepare.pre_deploy -- bash /usr/local/bin/render-sql.sh \
+            --FILE=pre_deploy.sql --TARGET="$DCM_TARGET" --CONNECTION_NAME="$CONNECTION_NAME"
+
+      - name: "Trace: job end"
+        if: always()
+        run: otel_job_end "${{ job.status }}"
 
   # ============================================================
   # JOB 2: SCAN — dependencies, linting, SonarQube
@@ -146,16 +169,10 @@ jobs:
     needs: prepare
     runs-on: self-hosted
     timeout-minutes: 30
-    env:
-      PROJECT_KEY: ${{ github.event.repository.name }}
-      SONAR_BRANCH_NAME: ${{ github.ref_name }}
-      SONAR_HOST: http://sonarqube:9000
-      SOURCE_DATABASE: ${{ inputs.SOURCE_DATABASE }}
-      SOURCE_SCHEMA: ${{ inputs.SOURCE_SCHEMA }}
-    defaults:
-      run:
-        shell: bash
     steps:
+      - name: "Trace: job start"
+        run: otel_job_begin
+
       - name: Checkout repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
         with:
@@ -171,36 +188,30 @@ jobs:
       - name: Extract dependencies
         continue-on-error: true
         run: |
-          bash /usr/local/bin/snowflake-extract-dependencies_v1.sh \
-            --SOURCE_DATABASE=$SOURCE_DATABASE \
-            --SOURCE_SCHEMA=$SOURCE_SCHEMA \
-            --CONNECTION_NAME=$CONNECTION_NAME
+          otel_step scan.dependencies -- bash /usr/local/bin/snowflake-extract-dependencies.sh \
+            --SOURCE_DATABASE="$SOURCE_DATABASE" --SOURCE_SCHEMA="$SOURCE_SCHEMA" --CONNECTION_NAME="$CONNECTION_NAME"
 
       - name: Run SQLFluff lint
         run: |
           set -Eeuo pipefail
-          bash /usr/local/bin/sqlfluff-to-sonar.sh "$(pwd)" "$(pwd)/sqlfluff_issues.json" || true
-          THRESHOLD=${{ inputs.SQLFLUFF_FAIL_THRESHOLD }}
-          if [[ "$THRESHOLD" -gt 0 && -f "$(pwd)/sqlfluff_issues.json" ]]; then
-            VIOLATION_COUNT=$(python3 -c "import json; d=json.load(open('sqlfluff_issues.json')); print(len([i for i in d.get('issues',[]) if i.get('severity','') == 'CRITICAL']))" 2>/dev/null || echo 0)
-            echo "::notice::SQLFluff critical violations: $VIOLATION_COUNT (threshold: $THRESHOLD)"
-            if [[ "$VIOLATION_COUNT" -ge "$THRESHOLD" ]]; then
-              echo "::error::SQLFluff critical violations ($VIOLATION_COUNT) exceed threshold ($THRESHOLD)"
-              exit 1
-            fi
-          fi
+          otel_step scan.sqlfluff -- bash /usr/local/bin/sqlfluff-to-sonar.sh \
+            "$(pwd)" "$(pwd)/sqlfluff_issues.json" "${{ inputs.SQLFLUFF_FAIL_THRESHOLD }}"
 
       - name: Run Sonar Scanner
         run: |
           set -Eeuo pipefail
-          PROJECT_VERSION="v${{ github.run_number }}" bash /usr/local/bin/sonar-scanner_v2.sh
+          export PROJECT_VERSION="v${RELEASE_NUM}"
+          otel_step scan.sonar -- bash /usr/local/bin/sonar-scan.sh
 
       - name: Wait for Quality Gate to complete
         timeout-minutes: 15
         continue-on-error: ${{ !inputs.QUALITY_GATE_ENFORCED }}
-        uses: sonarsource/sonarqube-quality-gate-action@7a5fffe8e523c40e0c740b6bc2712ab503e52efa  # v1.2.1
-        with:
-          scanMetadataReportFile: '.scannerwork/report-task.txt'
+        run: |
+          otel_step scan.quality_gate -- bash /usr/local/bin/sonar-quality-gate.sh .scannerwork/report-task.txt 300
+
+      - name: "Trace: job end"
+        if: always()
+        run: otel_job_end "${{ job.status }}"
 
   # ============================================================
   # JOB 3: DEPLOY — clone, DCM deploy, post-deploy, scripts
@@ -214,17 +225,10 @@ jobs:
     outputs:
       clone_schema: ${{ steps.clone.outputs.clone_schema }}
       work_dir: ${{ steps.clone.outputs.work_dir }}
-    env:
-      PROJECT_KEY: ${{ github.event.repository.name }}
-      RELEASE_NUM: ${{ github.run_number }}
-      SOURCE_DATABASE: ${{ inputs.SOURCE_DATABASE }}
-      SOURCE_SCHEMA: ${{ inputs.SOURCE_SCHEMA }}
-      DCM_PROJECT_IDENTIFIER: ${{ inputs.DCM_PROJECT_IDENTIFIER }}
-      DCM_TARGET: ${{ inputs.DCM_TARGET }}
-    defaults:
-      run:
-        shell: bash
     steps:
+      - name: "Trace: job start"
+        run: otel_job_begin
+
       - name: Checkout repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
         with:
@@ -242,69 +246,39 @@ jobs:
         if: ${{ inputs.CLONE_PER_BUILD }}
         run: |
           set -Eeuo pipefail
-          DCM_PROJECT_NAME=$(echo "$DCM_PROJECT_IDENTIFIER" | awk -F'.' '{print $NF}')
-          CLONE_SCHEMA="${SOURCE_SCHEMA}_${RELEASE_NUM}"
-          retry() { local n=0; until "$@"; do n=$((n+1)); if [ $n -ge 3 ]; then echo "::error::Failed after 3 attempts: $*"; return 1; fi; echo "::warning::Attempt $n failed, retrying in $((n*10))s..."; sleep $((n*10)); done; }
-          snow sql -q "CREATE OR REPLACE SCHEMA IDENTIFIER('${SOURCE_DATABASE}.${CLONE_SCHEMA}');" -c $CONNECTION_NAME
-          retry snow sql -q "CREATE DCM PROJECT IF NOT EXISTS IDENTIFIER('${SOURCE_DATABASE}.${CLONE_SCHEMA}.${DCM_PROJECT_NAME}');" -c $CONNECTION_NAME
-          WORK_DIR=$(mktemp -d)
-          cp -r . "$WORK_DIR/"
-          python3 -c "
-          import yaml, os
-          target = os.environ.get('DCM_TARGET')
-          schema = '${CLONE_SCHEMA}'
-          project = '${SOURCE_DATABASE}.${CLONE_SCHEMA}.${DCM_PROJECT_NAME}'
-          with open('$WORK_DIR/manifest.yml') as f:
-              m = yaml.safe_load(f)
-          m['targets'][target]['project_name'] = project
-          t = m.setdefault('templating', {})
-          t.setdefault('defaults', {})['schema'] = schema
-          cfg = t.get('configurations', {}).get(target, {})
-          if cfg:
-              cfg['schema'] = schema
-          with open('$WORK_DIR/manifest.yml', 'w') as f:
-              yaml.dump(m, f, default_flow_style=False)
-          "
-          if [[ -f "$WORK_DIR/sources/definitions/infrastructure.sql" ]]; then
-            sed -i '/^DEFINE WAREHOUSE/,/;$/d' "$WORK_DIR/sources/definitions/infrastructure.sql"
-          fi
-          echo "clone_schema=${CLONE_SCHEMA}" >> $GITHUB_OUTPUT
-          echo "work_dir=$WORK_DIR" >> $GITHUB_OUTPUT
-          echo "CLONE_SCHEMA=${CLONE_SCHEMA}" >> $GITHUB_ENV
-          echo "WORK_DIR=$WORK_DIR" >> $GITHUB_ENV
-          echo "DCM_PROJECT_IDENTIFIER=${SOURCE_DATABASE}.${CLONE_SCHEMA}.${DCM_PROJECT_NAME}" >> $GITHUB_ENV
+          otel_step deploy.clone_schema -- bash /usr/local/bin/snowflake-clone-schema.sh \
+            --SOURCE_DATABASE="$SOURCE_DATABASE" --SOURCE_SCHEMA="$SOURCE_SCHEMA" --RELEASE_NUM="$RELEASE_NUM" \
+            --DCM_PROJECT_IDENTIFIER="$DCM_PROJECT_IDENTIFIER" --TARGET="$DCM_TARGET" --CONNECTION_NAME="$CONNECTION_NAME"
 
       - name: DCM Analyze + Plan + Deploy
         timeout-minutes: 15
         run: |
           set -Eeuo pipefail
-          retry() { local n=0; until "$@"; do n=$((n+1)); if [ $n -ge 3 ]; then echo "::error::Failed after 3 attempts: $*"; return 1; fi; echo "::warning::Attempt $n failed, retrying in $((n*10))s..."; sleep $((n*10)); done; }
-          retry bash /usr/local/bin/snowflake-deploy-dcm_v1.sh \
-            --PROJECT_IDENTIFIER=$DCM_PROJECT_IDENTIFIER \
-            --CONNECTION_NAME=$CONNECTION_NAME \
-            --TARGET=$DCM_TARGET \
-            --ALIAS="release-${RELEASE_NUM}-${GITHUB_RUN_ATTEMPT}" \
+          otel_step deploy.dcm -- retry bash /usr/local/bin/snowflake-deploy-dcm.sh \
+            --PROJECT_IDENTIFIER="$DCM_PROJECT_IDENTIFIER" --CONNECTION_NAME="$CONNECTION_NAME" \
+            --TARGET="$DCM_TARGET" --ALIAS="release-${RELEASE_NUM}-${GITHUB_RUN_ATTEMPT}" \
             --PROJECT_DIR="${WORK_DIR:-$(pwd)}"
 
       - name: Render and execute post_deploy.sql
         run: |
           set -Eeuo pipefail
-          bash /usr/local/bin/render-sql_v1.sh \
-            --FILE=post_deploy.sql \
-            --TARGET=$DCM_TARGET \
-            --CONNECTION_NAME=$CONNECTION_NAME
+          otel_step deploy.post_deploy -- bash /usr/local/bin/render-sql.sh \
+            --FILE=post_deploy.sql --TARGET="$DCM_TARGET" --CONNECTION_NAME="$CONNECTION_NAME"
 
       - name: Run custom scripts
         run: |
           set -Eeuo pipefail
-          if [[ -d "scripts/" ]]; then
-            for script in $(ls scripts/*.sh 2>/dev/null | sort); do
-              echo "Running $script..."
-              bash "$script" --connection=$CONNECTION_NAME --database=$SOURCE_DATABASE --target=$DCM_TARGET
-            done
-          else
-            echo "No scripts/ directory found, skipping."
-          fi
+          shopt -s nullglob
+          scripts=(scripts/*.sh)
+          [[ ${#scripts[@]} -gt 0 ]] || { echo "No scripts/*.sh found, skipping."; exit 0; }
+          for script in "${scripts[@]}"; do
+            otel_step "deploy.script.$(basename "$script" .sh)" -- \
+              bash "$script" --connection="$CONNECTION_NAME" --database="$SOURCE_DATABASE" --target="$DCM_TARGET"
+          done
+
+      - name: "Trace: job end"
+        if: always()
+        run: otel_job_end "${{ job.status }}"
 
   # ============================================================
   # JOB 4: VALIDATE — SQL tests
@@ -315,15 +289,11 @@ jobs:
     runs-on: self-hosted
     timeout-minutes: 15
     env:
-      PROJECT_KEY: ${{ github.event.repository.name }}
-      SOURCE_DATABASE: ${{ inputs.SOURCE_DATABASE }}
-      SOURCE_SCHEMA: ${{ inputs.SOURCE_SCHEMA }}
-      DCM_TARGET: ${{ inputs.DCM_TARGET }}
       CLONE_SCHEMA: ${{ needs.deploy.outputs.clone_schema }}
-    defaults:
-      run:
-        shell: bash
     steps:
+      - name: "Trace: job start"
+        run: otel_job_begin
+
       - name: Checkout repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
         with:
@@ -339,49 +309,43 @@ jobs:
       - name: Run SQL Validation Tests
         run: |
           set -Eeuo pipefail
+          TEST_FILE="$(pwd)/sqlunit/tests.sqltest"
           if [[ -f "sqlunit/tests.sqltest" && -f "manifest.yml" ]]; then
-            bash /usr/local/bin/render-sql_v1.sh \
-              --FILE=sqlunit/tests.sqltest \
-              --TARGET=$DCM_TARGET \
-              --CONNECTION_NAME=$CONNECTION_NAME \
-              --MANIFEST=manifest.yml \
-              --RENDER_ONLY=sqlunit/tests.rendered.sqltest
+            otel_step validate.render_tests -- bash /usr/local/bin/render-sql.sh \
+              --FILE=sqlunit/tests.sqltest --TARGET="$DCM_TARGET" --CONNECTION_NAME="$CONNECTION_NAME" \
+              --MANIFEST=manifest.yml --RENDER_ONLY=sqlunit/tests.rendered.sqltest
             TEST_FILE="$(pwd)/sqlunit/tests.rendered.sqltest"
-          else
-            TEST_FILE="$(pwd)/sqlunit/tests.sqltest"
           fi
-          TEST_SCHEMA="${CLONE_SCHEMA:-$SOURCE_SCHEMA}"
-          bash /usr/local/bin/sql_validation_v4.sh \
-            --CLONE_DATABASE=$SOURCE_DATABASE \
-            --CLONE_SCHEMA=$TEST_SCHEMA \
-            --CONNECTION_NAME=$CONNECTION_NAME \
-            --TEST_FILE="$TEST_FILE"
+          otel_step validate.sql_tests -- bash /usr/local/bin/sql-validate.sh \
+            --CLONE_DATABASE="$SOURCE_DATABASE" --CLONE_SCHEMA="${CLONE_SCHEMA:-$SOURCE_SCHEMA}" \
+            --CONNECTION_NAME="$CONNECTION_NAME" --TEST_FILE="$TEST_FILE"
 
       - name: Convert test results for SonarQube
         run: |
           CTRF_FILE=$(find sql-unit-reports -name 'TEST_*.json' 2>/dev/null | sort | tail -1 || true)
           if [[ -n "$CTRF_FILE" ]]; then
-            python3 /usr/local/bin/ctrf_to_sonar_converter.py "$CTRF_FILE" "$(pwd)/sonar_test_report.xml"
+            otel_step validate.ctrf_to_sonar -- python3 /usr/local/bin/ctrf_to_sonar_converter.py \
+              "$CTRF_FILE" "$(pwd)/sonar_test_report.xml"
           else
             echo "No CTRF report found, skipping conversion."
           fi
+
+      - name: "Trace: job end"
+        if: always()
+        run: otel_job_end "${{ job.status }}"
 
   # ============================================================
   # JOB 5: CLEANUP — drop clone schema (always runs)
   # ============================================================
   cleanup:
-    needs: deploy
+    needs: [deploy, validate]  # never drop the clone while tests still run against it
     if: ${{ always() && inputs.CLONE_PER_BUILD && !inputs.DRY_RUN }}
     runs-on: self-hosted
     timeout-minutes: 10
-    env:
-      SOURCE_DATABASE: ${{ inputs.SOURCE_DATABASE }}
-      SOURCE_SCHEMA: ${{ inputs.SOURCE_SCHEMA }}
-      RELEASE_NUM: ${{ github.run_number }}
-    defaults:
-      run:
-        shell: bash
     steps:
+      - name: "Trace: job start"
+        run: otel_job_begin
+
       - name: Checkout repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
 
@@ -395,11 +359,13 @@ jobs:
       - name: Drop clone schema
         run: |
           rm -rf "${{ needs.deploy.outputs.work_dir }}" 2>/dev/null || true
-          bash /usr/local/bin/snowflake-drop-clone-schema_v3.sh \
-            --SOURCE_DATABASE=$SOURCE_DATABASE \
-            --SOURCE_SCHEMA=$SOURCE_SCHEMA \
-            --RELEASE_NUM=$RELEASE_NUM \
-            --CONNECTION_NAME=$CONNECTION_NAME
+          otel_step cleanup.drop_clone -- bash /usr/local/bin/snowflake-drop-clone-schema.sh \
+            --SOURCE_DATABASE="$SOURCE_DATABASE" --SOURCE_SCHEMA="$SOURCE_SCHEMA" \
+            --RELEASE_NUM="$RELEASE_NUM" --CONNECTION_NAME="$CONNECTION_NAME"
+
+      - name: "Trace: job end"
+        if: always()
+        run: otel_job_end "${{ job.status }}"
 
   # ============================================================
   # JOB 6: RELEASE — deploy original, package, release, summary
@@ -410,17 +376,10 @@ jobs:
     runs-on: self-hosted
     timeout-minutes: 15
     environment: ${{ inputs.DCM_TARGET }}
-    env:
-      PROJECT_KEY: ${{ github.event.repository.name }}
-      RELEASE_NUM: ${{ github.run_number }}
-      SONAR_BRANCH_NAME: ${{ github.ref_name }}
-      SOURCE_DATABASE: ${{ inputs.SOURCE_DATABASE }}
-      SOURCE_SCHEMA: ${{ inputs.SOURCE_SCHEMA }}
-      DCM_TARGET: ${{ inputs.DCM_TARGET }}
-    defaults:
-      run:
-        shell: bash
     steps:
+      - name: "Trace: job start"
+        run: otel_job_begin
+
       - name: Checkout repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
         with:
@@ -437,16 +396,12 @@ jobs:
         if: ${{ inputs.CLONE_PER_BUILD }}
         run: |
           set -Eeuo pipefail
-          retry() { local n=0; until "$@"; do n=$((n+1)); if [ $n -ge 3 ]; then echo "::error::Failed after 3 attempts: $*"; return 1; fi; echo "::warning::Attempt $n failed, retrying in $((n*10))s..."; sleep $((n*10)); done; }
-          retry bash /usr/local/bin/snowflake-deploy-dcm_v1.sh \
-            --PROJECT_IDENTIFIER=${{ inputs.DCM_PROJECT_IDENTIFIER }} \
-            --CONNECTION_NAME=$CONNECTION_NAME \
-            --TARGET=$DCM_TARGET \
-            --ALIAS="release-${RELEASE_NUM}-${GITHUB_RUN_ATTEMPT}" \
-            --PROJECT_DIR="$(pwd)"
+          otel_step release.dcm -- retry bash /usr/local/bin/snowflake-deploy-dcm.sh \
+            --PROJECT_IDENTIFIER="$DCM_PROJECT_IDENTIFIER" --CONNECTION_NAME="$CONNECTION_NAME" \
+            --TARGET="$DCM_TARGET" --ALIAS="release-${RELEASE_NUM}-${GITHUB_RUN_ATTEMPT}" --PROJECT_DIR="$(pwd)"
 
       - name: Upload pipeline artifacts
-        if: always()
+        if: ${{ always() && !env.ACT }}  # act's artifact server is not reachable from job containers
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
         with:
           name: pipeline-logs-${{ github.run_number }}
@@ -462,12 +417,12 @@ jobs:
       - name: Zip source files
         run: |
           set -Eeuo pipefail
-          zip -r release.zip . \
-            -x '*.git*' '*.scannerwork*' 'out/*' \
-               '__pycache__/*' '.pytest_cache/*' '.venv/*' \
+          otel_step release.zip -- zip -qr release.zip . \
+            -x '*.git*' '*.scannerwork*' 'out/*' '__pycache__/*' '.pytest_cache/*' '.venv/*' \
                '*.bak' 'sqlunit/*.rendered.*'
 
       - name: Create GitHub Release
+        if: ${{ !env.ACT }}  # skipped in local-ci (nektos/act)
         uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64  # v3.0.3
         with:
           name: Release ${{ github.run_number }}
@@ -478,7 +433,7 @@ jobs:
       - name: Deployment summary
         if: always()
         run: |
-          cat >> $GITHUB_STEP_SUMMARY <<SUMMARY
+          cat >> "$GITHUB_STEP_SUMMARY" <<SUMMARY
           ## Deployment Summary
 
           | Item | Value |
@@ -493,3 +448,32 @@ jobs:
           | Dry Run | ${{ inputs.DRY_RUN }} |
           | Auth | ${{ inputs.USE_OIDC && 'OIDC' || 'SNOW_CONFIG_B64' }} |
           SUMMARY
+
+      - name: "Trace: job end"
+        if: always()
+        run: otel_job_end "${{ job.status }}"
+
+  # ============================================================
+  # JOB 7: FINISH — pipeline-level trace span (always)
+  # ============================================================
+  finish:
+    needs: [prepare, scan, deploy, validate, cleanup, release]
+    if: ${{ always() && inputs.OTEL_ENABLED }}
+    runs-on: self-hosted
+    timeout-minutes: 5
+    steps:
+      - name: Pipeline span + queue times
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PIPELINE_START: ${{ needs.prepare.outputs.pipeline_start }}
+          RESULTS: >-
+            prepare=${{ needs.prepare.result }} scan=${{ needs.scan.result }} deploy=${{ needs.deploy.result }}
+            validate=${{ needs.validate.result }} cleanup=${{ needs.cleanup.result }} release=${{ needs.release.result }}
+        run: |
+          STATUS=0
+          [[ "$RESULTS" == *"=failure"* || "$RESULTS" == *"=cancelled"* ]] && STATUS=1
+          echo "Job results: $RESULTS"
+          otel_queue_spans
+          otel_pipeline_end "${PIPELINE_START:-$(date +%s%N)}" "$STATUS" \
+            "cicd.pipeline.result=$([[ $STATUS == 0 ]] && echo success || echo failure)" \
+            "cicd.dry_run=${{ inputs.DRY_RUN }}"

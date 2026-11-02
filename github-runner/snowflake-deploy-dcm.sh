@@ -5,7 +5,7 @@
 # Runs: analyze -> plan -> deploy using Snowflake DCM
 # -----------------------------------------------------------------------------
 # Usage:
-# ./snowflake-deploy-dcm_v1.sh \
+# ./snowflake-deploy-dcm.sh \
 #   --PROJECT_IDENTIFIER=DATAOPS.IOT_RAW_V001.MOTHER_OF_ALL_PROJECTS \
 #   --CONNECTION_NAME=zs28104-svc_cicd \
 #   --TARGET=DEV \

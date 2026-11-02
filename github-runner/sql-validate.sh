@@ -5,7 +5,7 @@
 # Output: CTRF JSON (Common Test Report Format)
 # -----------------------------------------------------------------------------
 # Usage:
-# ./sql_validation_v4.sh \
+# ./sql-validate.sh \
 #   --CLONE_SCHEMA=IOT_RAW_V001 \
 #   --CLONE_DATABASE=DATAOPS \
 #   --CONNECTION_NAME=zs28104-svc_cicd \
@@ -14,6 +14,7 @@
 
 FAKE_RUN=false
 RELEASE_NUM=""
+WORKSPACE_DIR="$(pwd)"
 set +e
 set -u
 
@@ -68,14 +69,18 @@ if [[ -f /.dockerenv ]] || grep -qE '/docker/|/lxc/' /proc/1/cgroup 2>/dev/null;
   echo "Running inside Docker container"
   REPORT_DIR="/home/docker/sql-report-vol"
   CTRF_REPORT_DIR="/home/docker/sql-unit-reports"
+  # One UnitTH run store per project; run folders are deleted once stored.
+  STORE_DIR="/home/docker/unitth-store"
 elif [[ "$(uname)" == "Darwin" ]]; then
   echo "Running on macOS"
   REPORT_DIR="$(pwd)/sql-report-vol"
   CTRF_REPORT_DIR="$(pwd)/sql-unit-reports"
+  STORE_DIR=""
 else
   echo "Unknown system, defaulting to current dir"
   REPORT_DIR="$(pwd)/sql-report-vol"
   CTRF_REPORT_DIR="$(pwd)/sql-unit-reports"
+  STORE_DIR=""
 fi
 
 mkdir -p "$CTRF_REPORT_DIR"
@@ -246,9 +251,38 @@ mkdir -p "$REPORT_DIR"
 echo "Running unitth.jar ..."
 echo "REPORT_DIR: $REPORT_DIR"
 echo "CTRF_REPORT_DIR: $CTRF_REPORT_DIR"
-echo "Executing: java -Dunitth.report.dir=\"$REPORT_DIR\" -jar unitth.jar --ctrf $CTRF_REPORT_DIR/*"
 
-cd /usr/local/bin && java -Dunitth.report.dir="$REPORT_DIR" -jar unitth.jar --ctrf "$CTRF_REPORT_DIR"/* || echo "unitth report generation failed (non-critical)"
+if [[ -z "$STORE_DIR" ]]; then
+  echo "Executing: java -Dunitth.report.dir=\"$REPORT_DIR\" -jar unitth.jar --ctrf $CTRF_REPORT_DIR/*"
+  cd /usr/local/bin && java -Dunitth.report.dir="$REPORT_DIR" -jar unitth.jar --ctrf "$CTRF_REPORT_DIR"/* || echo "unitth report generation failed (non-critical)"
+  exit 0
+fi
+
+# Keep a copy in the job workspace for the SonarQube conversion step.
+mkdir -p "$WORKSPACE_DIR/sql-unit-reports" && cp "$CTRF_REPORT_FILE" "$WORKSPACE_DIR/sql-unit-reports/" \
+  || echo "⚠️ Could not copy the CTRF report into the workspace"
+
+# Store name = project (owner_repo), file-system safe; must match migrate-ctrf-history.sh.
+STORE_NAME="${TESTSUITE_NAME%_SQLValidation}"
+STORE_FILE="$STORE_DIR/${STORE_NAME//[^A-Za-z0-9._-]/_}.json"
+mkdir -p "$STORE_DIR"
+echo "STORE_FILE: $STORE_FILE"
+UNITTH_LOG=$(mktemp)
+echo "Executing: java -Dunitth.report.dir=\"$REPORT_DIR\" -jar unitth.jar --store \"$STORE_FILE\" --store-dir \"$STORE_DIR\" --ctrf $REPORT_SUBDIR"
+(cd /usr/local/bin && java -Dunitth.report.dir="$REPORT_DIR" -jar unitth.jar \
+    --store "$STORE_FILE" --store-dir "$STORE_DIR" --ctrf "$REPORT_SUBDIR") 2>&1 | tee "$UNITTH_LOG" \
+  || echo "unitth report generation failed (non-critical)"
+
+# Delete the run folder only if UnitTH confirmed it stored this one run, and
+# only if it is the folder created by this script (never the parent).
+if grep -qE "found=1 .*ingest=ok" "$UNITTH_LOG" \
+    && [[ "$REPORT_SUBDIR" != "$CTRF_REPORT_DIR" ]] \
+    && [[ "$(basename "$REPORT_SUBDIR")" == "$UTC_TIMESTAMP" ]]; then
+  rm -rf -- "$REPORT_SUBDIR" && echo "🧹 Stored in run store, removed $REPORT_SUBDIR"
+else
+  echo "⚠️ Run not confirmed in the run store, keeping $REPORT_SUBDIR"
+fi
+rm -f "$UNITTH_LOG"
 
 # --- Exit always 0 — failures are tracked in CTRF report ---
 exit 0

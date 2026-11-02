@@ -3,7 +3,7 @@
 # Drop a cloned schema (cleanup after regression test)
 # -----------------------------------------------------------------------------
 # Usage:
-#   snowflake-drop-clone-schema_v3.sh \
+#   snowflake-drop-clone-schema.sh \
 #     --SOURCE_DATABASE=DATAOPS \
 #     --SOURCE_SCHEMA=IOT_RAW_V001 \
 #     --RELEASE_NUM=42 \

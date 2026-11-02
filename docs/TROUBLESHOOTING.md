@@ -62,3 +62,16 @@ Common failures by pipeline job and how to resolve them.
 | Runner not picking up latest pipeline | GitHub caches workflow ref at trigger time | Trigger again after backbone push is complete |
 | Duplicate `uniq_profile_rule_uuids` in SonarQube | Rule setup script running non-idempotently | Rebuild runner image (`./start.sh`) to get fixed `sonar-rules-setup.sh` |
 | `id-token: write` permission error | Consumer repo caller missing permissions block | Add `permissions: id-token: write` to the consumer workflow |
+| Queued jobs stuck after image rebuild | Old (non-ephemeral) runners re-registered and orphaned queued jobs | Fixed by ephemeral runners. For jobs queued before the switch: cancel and re-run once |
+| Sonar scan: `Missing SONAR_TOKEN` | `sonar-init` did not complete | `docker compose logs sonar-init`; re-run with `docker compose up sonar-init` |
+| Many `./start.sh` processes running | Old `start.sh` stayed attached to `docker compose up` | Run the new `./start.sh` once, then `pkill -9 -f 'docker compose --env-file .env up'` (SIGKILL ends the clients **without** stopping the containers; SIGINT/SIGTERM would stop them) |
+
+## Local simulation
+
+Test workflow changes without commit/push:
+
+```bash
+bash local-ci/run.sh --dry-run            # prepare + scan, no Snowflake changes
+bash local-ci/run.sh --full               # incl. deploy to clone schema
+bash local-ci/run.sh --project=../other-repo --dry-run
+```

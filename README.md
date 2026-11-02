@@ -259,26 +259,34 @@ When disabled (default), quality gate failures are reported but do not block the
 ```
 DataOpsBackbone/
 ├── .github/workflows/
-│   ├── dataops-pipeline.yml    # Reusable 6-job pipeline (called by all repos)
+│   ├── dataops-pipeline.yml    # Reusable pipeline (6 jobs + finish/trace), every step traced
 │   └── docker-publish.yml      # Docker image CI
 ├── github-runner/
-│   ├── Dockerfile              # Self-hosted runner image (incl. SQLFluff, yq)
-│   ├── entrypoint.sh           # Runner registration (org/repo scope)
-│   ├── github-runner_v1.sh     # Decode SNOW_CONFIG_B64 (PAT fallback)
-│   ├── sonar-rules-setup.sh    # Auto-create SonarQube quality profile (40 rules)
-│   ├── sonar-token-init.sh     # Auto-generate SONAR_TOKEN per runner
-│   ├── sonar-scanner_v2.sh     # Run sonar-scanner + import SQLFluff + test results
-│   ├── sqlfluff-to-sonar.sh    # Run SQLFluff → SonarQube Generic Issue format
+│   ├── Dockerfile              # Runner image (SQLFluff, yq, act, docker CLI, otel-cli)
+│   ├── entrypoint.sh           # Ephemeral runner registration (one job per registration)
+│   ├── lib.sh                  # Step helpers: retry, otel_step, otel_span (loaded via BASH_ENV)
+│   ├── snowflake-config-setup.sh       # Decode SNOW_CONFIG_B64 (PAT fallback)
+│   ├── sonar-rules-setup.sh    # Create SonarQube quality profile + custom rules (sonar-init)
+│   ├── sonar-token-init.sh     # Create shared SONAR_TOKEN, revoke old runner-* tokens (sonar-init)
+│   ├── sonar-scan.sh           # Run sonar-scanner + import SQLFluff + test results
+│   ├── sonar-quality-gate.sh   # Wait for analysis + check Quality Gate (token never in job env)
+│   ├── sqlfluff-to-sonar.sh    # Run SQLFluff → SonarQube Generic Issue format (+ fail threshold)
 │   ├── sqlfluff_to_sonar.py    # JSON converter (SQLFluff → SonarQube)
 │   ├── ctrf_to_sonar_converter.py  # CTRF JSON → SonarQube Test Execution XML
 │   ├── sqlfluff_sonar.cfg      # SQLFluff config (non-overlapping rules only)
 │   ├── ddl_uppercase_keywords.py # Normalize GET_DDL() output
-│   ├── sql_validation_v4.sh    # SQL tests → CTRF JSON
-│   ├── snowflake-deploy-dcm_v1.sh
-│   ├── snowflake-extract-dependencies_v1.sh
-│   ├── render-sql_v1.sh        # Jinja-style template rendering
+│   ├── sql-validate.sh         # SQL tests → CTRF JSON
+│   ├── snowflake-clone-schema.sh       # Per-build schema + DCM project + manifest rewrite
+│   ├── snowflake-drop-clone-schema.sh
+│   ├── snowflake-deploy-dcm.sh
+│   ├── snowflake-extract-dependencies.sh
+│   ├── render-sql.sh           # Jinja-style template rendering
+│   ├── e2e-test.sh             # Manual end-to-end test against the Docker stack
 │   ├── unitth.jar              # UnitTestHistory v3.0
 │   └── tests.sqltest           # Sample test file
+├── local-ci/
+│   ├── run.sh                  # Run a consumer's pipeline locally with act (no commit/push)
+│   └── sonar-self-scan.sh      # Scan this repo with local SonarQube, fail on BLOCKER/CRITICAL
 ├── sqlfluff/                   # Standalone SQLFluff linter (alternative to SonarQube)
 │   ├── .sqlfluff               # SQLFluff config (all rules)
 │   ├── lint.py                 # Combined runner: SQLFluff + custom regex rules
@@ -286,13 +294,16 @@ DataOpsBackbone/
 │   └── test_sql/               # Good/bad SQL examples for testing
 ├── docs/
 │   ├── QUICKSTART.md           # 15-minute first pipeline guide
-│   └── TROUBLESHOOTING.md      # Per-job failure/recovery guide
-├── sonarqube/Dockerfile        # Custom SonarQube image
+│   └── TROUBLESHOOTING.md      # Per-job failure/recovery guide + local simulation
+├── sonarqube/
+│   ├── Dockerfile              # Custom SonarQube image
+│   ├── quality-profiles/       # Exported custom quality profiles
+│   └── db-init/                # Optional DB dump, loaded on fresh volume (gitignored)
 ├── nginx/default.conf          # Nginx for test report serving
-├── backup/                     # SonarQube quality profile backups
 ├── images/                     # Documentation images
-├── docker-compose.yml          # Full stack (SonarQube + 2 runners + nginx)
-└── start.sh                    # One-command startup
+├── sonar-project.properties    # Self-scan config for this repo
+├── docker-compose.yml          # SonarQube, sonar-init, 2 ephemeral runners, nginx; profiles: local-ci, observability
+└── start.sh                    # One-command startup (detached); --with-observability adds Jaeger
 ```
 
 ---
@@ -540,6 +551,33 @@ Backups of these rules, which can be restored as a Quality Profile, are availabl
 ### Monitor the history of test case execution
 ![unitth_overview.png](images/unitth_overview.png)
 
+The history lives in UnitTH run stores, one JSON file per project in `./unitth-store/` (mounted at `/home/docker/unitth-store` in both runners):
+
+- `sql-validate.sh` ingests each new CTRF run into `unitth-store/<owner>_<repo>.json` and rebuilds the report on http://localhost:8080 from all stores (`--store-dir`). Each store keeps the newest 100 runs.
+- The run folder in `./sql-unit-reports/` is deleted only after UnitTH reports `ingest=ok` for that run. A copy of the CTRF file stays in the job workspace for the SonarQube conversion step.
+- Concurrent runs of the same project are serialised by a lock on `<store>.lock`. After 60 s the ingest is skipped with a warning and the run folder is kept.
+- Old run folders are moved into the stores once with `UnitTH/e2e/migrate-ctrf-history.sh` (dry-run by default, `--apply` to delete). Back up `./sql-unit-reports/` into `./archive/` first.
+
+### Pipeline tracing (OpenTelemetry)
+
+Every `run:` step in `dataops-pipeline.yml` is wrapped in `otel_step` (`github-runner/lib.sh`): it logs a begin/end line with exit code and duration, and exports one span per step. All jobs of one run share a trace (trace id derived from `run_id` + attempt):
+
+```
+pipeline <repo>          overall result (finish job)
+├── job <name>           full job duration incl. checkout/connect, result, runner name
+│   ├── queue <name>     time waiting for a runner (GitHub API; not in local-ci)
+│   └── <step>           e.g. scan.sonar, deploy.dcm — exit code + duration
+```
+
+```bash
+./start.sh --with-observability      # adds Jaeger; UI on http://localhost:16686 (service: dataops-pipeline)
+```
+
+- One container (`jaegertracing/all-in-one`, Badger storage, 7-day retention) on its own `otelnet` network; SonarQube and Postgres are not reachable from it.
+- Fail-open: without `--with-observability` the runners have no OTLP endpoint and no spans are sent; a stopped Jaeger never fails a step.
+- Disable per consumer with the workflow input `OTEL_ENABLED: false`.
+- `local-ci/run.sh` sends traces to Jaeger automatically when it is running.
+
 ## SonarQube + SQLFluff — Integrated Scanning
 
 Both tools run in the CI/CD pipeline. SQLFluff issues are imported into SonarQube as external issues via `sonar.externalIssuesReportPaths`, giving **one dashboard for everything**.
@@ -725,10 +763,12 @@ gh secret set SNOW_CONFIG_B64 --org zbrainiac-labs --visibility all
 | Service | Purpose | Port |
 |---------|---------|------|
 | `sonarqube` | Code quality + custom SQL rules | 9000 |
-| `db` | PostgreSQL backend for SonarQube | - |
-| `runner1` | Org-level self-hosted GitHub runner | - |
-| `runner2` | Org-level self-hosted GitHub runner | - |
+| `db` | PostgreSQL backend for SonarQube (optional dump in `sonarqube/db-init/`) | - |
+| `sonar-init` | One-shot: shared Sonar token + custom rules, then exits | - |
+| `runner` (x2) | Ephemeral org-level self-hosted GitHub runners | - |
 | `nginx-server` | Serves UnitTestHistory HTML reports | 8080 |
+| `jaeger` | Pipeline traces, profile `observability` | 16686 |
+| `local-ci` | Local workflow simulation with act, profile `local-ci` | - |
 
 ---
 

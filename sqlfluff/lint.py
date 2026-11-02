@@ -9,7 +9,7 @@ safety, naming, security, data type, and quality checks.
 Usage:
     python3 lint.py <file_or_dir> [--format=text|json]
 
-Output: CTRF JSON report (same format as sql_validation_v4.sh)
+Output: CTRF JSON report (same format as sql-validate.sh)
 """
 
 from __future__ import annotations

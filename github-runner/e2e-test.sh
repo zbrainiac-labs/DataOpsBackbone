@@ -165,7 +165,7 @@ else
   echo "Decoding Snowflake config..."
   docker compose exec -T runner1 bash -c "
     export SNOW_CONFIG_B64='$SNOW_CONFIG_B64'
-    bash /usr/local/bin/github-runner_v1.sh
+    bash /usr/local/bin/snowflake-config-setup.sh
   "
 fi
 
@@ -181,14 +181,14 @@ docker compose exec -T runner1 bash -c "
   export FAKE_RUN='false'
 
   echo 'Running dependencies extraction...'
-  bash /usr/local/bin/snowflake-extract-dependencies_v1.sh \
+  bash /usr/local/bin/snowflake-extract-dependencies.sh \
     --SOURCE_DATABASE=\$SOURCE_DATABASE \
     --SOURCE_SCHEMA=\$SOURCE_SCHEMA \
     --OUTPUT_DIR=/tmp/e2e-output \
     --CONNECTION_NAME=\$CONNECTION_NAME
 
   echo 'Running DCM deploy...'
-  bash /usr/local/bin/snowflake-deploy-dcm_v1.sh \
+  bash /usr/local/bin/snowflake-deploy-dcm.sh \
     --PROJECT_IDENTIFIER=\$DCM_PROJECT_IDENTIFIER \
     --CONNECTION_NAME=\$CONNECTION_NAME \
     --TARGET=\$DCM_TARGET \
@@ -205,14 +205,14 @@ docker compose exec -T runner1 bash -c "
   export PROJECT_KEY=\$PROJECT_KEY
   export SONAR_HOST='http://sonarqube:9000'
   export PROJECT_VERSION='e2e-test'
-  # sonar-scanner_v2.sh expects files under the runner work dir; symlink to our e2e output
+  # sonar-scan.sh expects files under the runner work dir; symlink to our e2e output
   SCAN_DIR=\"/home/docker/actions-runner/_work/\$PROJECT_KEY/\$PROJECT_KEY\"
   mkdir -p \"\$(dirname \$SCAN_DIR)\"
   ln -sfn /tmp/e2e-output \"\$SCAN_DIR\"
-  bash /usr/local/bin/sonar-scanner_v2.sh
+  bash /usr/local/bin/sonar-scan.sh
 
   echo 'Running SQL validation...'
-  bash /usr/local/bin/sql_validation_v4.sh \
+  bash /usr/local/bin/sql-validate.sh \
     --CLONE_SCHEMA=\$SOURCE_SCHEMA \
     --CLONE_DATABASE=\$SOURCE_DATABASE \
     --RELEASE_NUM=e2e-test \

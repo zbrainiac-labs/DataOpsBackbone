@@ -4,6 +4,7 @@
 # Auto-generates a SonarQube analysis token at runner startup.
 # Eliminates the need to manually manage SONAR_TOKEN secrets.
 # Requires SONAR_HOST, SONAR_ADMIN_USER, SONAR_ADMIN_PASS env vars.
+# Writes SONAR_TOKEN=... to $SONAR_ENV_FILE (default ~/.sonar_env).
 # -----------------------------------------------------------------------------
 
 set +e
@@ -12,6 +13,7 @@ set -u
 SONAR_HOST="${SONAR_HOST:-http://sonarqube:9000}"
 SONAR_ADMIN_USER="${SONAR_ADMIN_USER:-admin}"
 SONAR_ADMIN_PASS="${SONAR_ADMIN_PASS:-ThisIsNotSecure1234!}"
+SONAR_ENV_FILE="${SONAR_ENV_FILE:-$HOME/.sonar_env}"
 TOKEN_NAME="runner-${RUNNER_NAME:-${GITHUB_REPO:-default}}-$(date +%Y%m%d)"
 
 echo "Waiting for SonarQube at $SONAR_HOST..."
@@ -48,11 +50,20 @@ RESPONSE=$(curl -sf -u "$SONAR_ADMIN_USER:$SONAR_ADMIN_PASS" -X POST "$SONAR_HOS
 
 NEW_TOKEN=$(echo "$RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('token',''))" 2>/dev/null || true)
 
-if [[ -n "$NEW_TOKEN" && "$NEW_TOKEN" != "" ]]; then
+if [[ -n "$NEW_TOKEN" ]]; then
   export SONAR_TOKEN="$NEW_TOKEN"
-  echo "SONAR_TOKEN=$NEW_TOKEN" >> "$HOME/.sonar_env"
+  # Overwrite (not append) so only the current token is on disk; owner-only.
+  ( umask 077; echo "SONAR_TOKEN=$NEW_TOKEN" > "$SONAR_ENV_FILE" )
   echo "Auto-generated SONAR_TOKEN for project scope: $TOKEN_NAME"
+  # Revoke older runner-* tokens so they don't pile up (one per day/runner).
+  curl -sf -u "$SONAR_ADMIN_USER:$SONAR_ADMIN_PASS" "$SONAR_HOST/api/user_tokens/search" 2>/dev/null \
+    | jq -r '.userTokens[].name' | grep '^runner-' | grep -vx "$TOKEN_NAME" \
+    | while read -r OLD; do
+        curl -sf -u "$SONAR_ADMIN_USER:$SONAR_ADMIN_PASS" -X POST "$SONAR_HOST/api/user_tokens/revoke" \
+          --data-urlencode "name=$OLD" >/dev/null && echo "Revoked old token: $OLD"
+      done || true
 else
-  echo "Failed to generate SONAR_TOKEN. Response: $RESPONSE"
+  # Never print the response body: on partial success it can contain the token.
+  echo "Failed to generate SONAR_TOKEN for $TOKEN_NAME (check SonarQube admin credentials)."
   exit 1
 fi

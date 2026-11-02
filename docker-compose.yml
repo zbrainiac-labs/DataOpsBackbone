@@ -1,21 +1,3 @@
-x-runner-base: &runner-base
-  image: brainiac/local-github-runner
-  restart: unless-stopped
-  volumes:
-    - /var/run/docker.sock:/var/run/docker.sock
-    - sql_unit_report:/home/docker/sql-report-vol
-    - ./sql-unit-reports:/home/docker/sql-unit-reports
-  networks:
-    - sonarnet
-
-x-runner-env: &runner-env
-  GITHUB_OWNER: ${GITHUB_OWNER}
-  ACCESS_TOKEN: ${GH_RUNNER_TOKEN}
-  SONAR_HOST: http://sonarqube:9000
-  SONAR_ADMIN_PASS: ${SONAR_ADMIN_PASS}
-  CONNECTION_NAME: ${CONNECTION_NAME}
-  SNOW_CONFIG_B64: ${SNOW_CONFIG_B64:-}
-
 services:
   sonarqube:
     image: brainiac/sonarqube
@@ -50,7 +32,8 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
     volumes:
       - postgresql:/var/lib/postgresql/data
-      - ./backup:/docker-entrypoint-initdb.d
+      # Optional SonarQube DB dump (*.sql), loaded only when the volume is created fresh
+      - ./sonarqube/db-init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 10s
@@ -60,60 +43,87 @@ services:
     networks:
       - sonarnet
 
-  runner1:
-    <<: *runner-base
-    container_name: github-runner-org-${GITHUB_ORG}-1
+  # One-shot: create the shared Sonar analysis token + custom rules, then exit.
+  # Re-runs on every `up` and rotates the token (old one with same name is revoked).
+  sonar-init:
+    image: brainiac/local-github-runner
+    restart: "no"
+    user: root
     depends_on:
       sonarqube:
         condition: service_healthy
     environment:
-      <<: *runner-env
-      RUNNER_SCOPE: org
-      GITHUB_OWNER: ${GITHUB_ORG}
-      ACCESS_TOKEN: ${GH_ORG_TOKEN}
-      RUNNER_NAME: runner-org-${GITHUB_ORG}-1
-      RUNNER_WORKDIR: /_work/runner-org-${GITHUB_ORG}-1
-      GITHUB_REPO: ""
-      LABELS: runner-org-${GITHUB_ORG}
-      PROJECT_KEY: org-${GITHUB_ORG}
-      DISABLE_AUTOMATIC_DEREGISTRATION: "true"
-      CONFIGURED_ACTIONS_RUNNER_FILES_DIR: /actions-runner-config/org-${GITHUB_ORG}-1
-      UNSET_CONFIG_VARS: "true"
+      SONAR_HOST: http://sonarqube:9000
+      SONAR_ADMIN_PASS: ${SONAR_ADMIN_PASS}
+      SONAR_ENV_FILE: /sonar/.sonar_env
+      RUNNER_NAME: shared
+    entrypoint: ["bash", "-c"]
+    command:
+      - >-
+        bash /usr/local/bin/sonar-token-init.sh &&
+        test -s /sonar/.sonar_env &&
+        chown 1000:1000 /sonar/.sonar_env &&
+        bash /usr/local/bin/sonar-rules-setup.sh
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - runner_config_1:/actions-runner-config/org-${GITHUB_ORG}-1
-      - sql_unit_report:/home/docker/sql-report-vol
-      - ./sql-unit-reports:/home/docker/sql-unit-reports
+      - sonar_env:/sonar
+    networks:
+      - sonarnet
 
-  runner2:
-    <<: *runner-base
-    container_name: github-runner-org-${GITHUB_ORG}-2
+  # Ephemeral org runners: one job per registration, then a fresh one.
+  runner:
+    image: brainiac/local-github-runner
+    restart: always
+    deploy:
+      replicas: 2
     depends_on:
-      sonarqube:
-        condition: service_healthy
+      sonar-init:
+        condition: service_completed_successfully
     environment:
-      <<: *runner-env
       RUNNER_SCOPE: org
       GITHUB_OWNER: ${GITHUB_ORG}
       ACCESS_TOKEN: ${GH_ORG_TOKEN}
-      RUNNER_NAME: runner-org-${GITHUB_ORG}-2
-      RUNNER_WORKDIR: /_work/runner-org-${GITHUB_ORG}-2
-      GITHUB_REPO: ""
-      LABELS: runner-org-${GITHUB_ORG}
-      PROJECT_KEY: org-${GITHUB_ORG}
-      DISABLE_AUTOMATIC_DEREGISTRATION: "true"
-      CONFIGURED_ACTIONS_RUNNER_FILES_DIR: /actions-runner-config/org-${GITHUB_ORG}-2
-      UNSET_CONFIG_VARS: "true"
+      RUNNER_LABELS: runner-org-${GITHUB_ORG}
+      SONAR_HOST: http://sonarqube:9000
+      CONNECTION_NAME: ${CONNECTION_NAME}
+      SNOW_CONFIG_B64: ${SNOW_CONFIG_B64:-}
+      # Set by `./start.sh --with-observability`; empty = tracing off
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - runner_config_2:/actions-runner-config/org-${GITHUB_ORG}-2
+      - sonar_env:/sonar:ro
       - sql_unit_report:/home/docker/sql-report-vol
       - ./sql-unit-reports:/home/docker/sql-unit-reports
+      - ./unitth-store:/home/docker/unitth-store
+    networks:
+      - sonarnet
+      - otelnet
 
+  # Pipeline tracing (OpenTelemetry). Not started by default:
+  #   ./start.sh --with-observability   -> UI http://localhost:16686
+  jaeger:
+    profiles: ["observability"]
+    image: jaegertracing/all-in-one:1.62.0
+    container_name: telemetry
+    restart: unless-stopped
+    environment:
+      SPAN_STORAGE_TYPE: badger
+      BADGER_EPHEMERAL: "false"
+      BADGER_DIRECTORY_VALUE: /badger/data
+      BADGER_DIRECTORY_KEY: /badger/key
+      BADGER_SPAN_STORE_TTL: 168h
+    user: "0"
+    ports:
+      - "16686:16686"
+      # OTLP for local-ci (act job containers can only join sonarnet); localhost only
+      - "127.0.0.1:4317:4317"
+    volumes:
+      - jaeger_data:/badger
+    networks:
+      - otelnet
 
   nginx-server:
     image: nginx
-    container_name: nginx-server
+    container_name: test-unit-reports
     ports:
       - "8080:80"
     volumes:
@@ -128,15 +138,37 @@ services:
     networks:
       - sonarnet
 
+  # Local GitHub Actions simulation (nektos/act). Never started by `up`;
+  # run on demand:  docker compose --profile local-ci run --rm local-ci [--dry-run|--full]
+  local-ci:
+    profiles: ["local-ci"]
+    image: brainiac/local-github-runner
+    hostname: local-ci
+    user: root  # access to the mounted docker socket
+    entrypoint: ["bash", "/workspace/DataOpsBackbone/local-ci/run.sh"]
+    command: ["--dry-run"]
+    environment:
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Parent of backbone + consumer repos, mounted at a fixed path
+      - ..:/workspace
+    working_dir: /workspace/DataOpsBackbone
+    networks:
+      - sonarnet
+      - otelnet
+
 volumes:
   sonarqube_data:
   sonarqube_extensions:
   postgresql:
-  runner_config_1:
-  runner_config_2:
+  sonar_env:
+  jaeger_data:
 
   sql_unit_report:
     name: sql_unit_report
 
 networks:
   sonarnet:
+  # Tracing only: runners/local-ci -> jaeger. SonarQube/Postgres are not on it.
+  otelnet:

@@ -10,8 +10,8 @@
 #   Render-only: Renders variables and writes output file (no execution)
 #
 # Usage:
-#   render-sql_v1.sh --FILE=pre_deploy.sql --TARGET=DEV --CONNECTION_NAME=myconn
-#   render-sql_v1.sh --FILE=tests.sqltest --TARGET=DEV --MANIFEST=manifest.yml --RENDER_ONLY=tests.rendered.sqltest
+#   render-sql.sh --FILE=pre_deploy.sql --TARGET=DEV --CONNECTION_NAME=myconn
+#   render-sql.sh --FILE=tests.sqltest --TARGET=DEV --MANIFEST=manifest.yml --RENDER_ONLY=tests.rendered.sqltest
 #
 # Skips gracefully if the SQL file does not exist (exit 0).
 # -----------------------------------------------------------------------------
@@ -31,6 +31,8 @@ done
 SQL_FILE="${SQL_FILE:?Missing --FILE}"
 TARGET="${TARGET:-DEV}"
 MANIFEST="${MANIFEST:-manifest.yml}"
+RENDER_ONLY="${RENDER_ONLY:-}"
+CONNECTION_NAME="${CONNECTION_NAME:-}"
 
 if [[ ! -f "$SQL_FILE" ]]; then
   echo "⏭️  $SQL_FILE not found, skipping."
@@ -62,19 +64,22 @@ fi
 
 CONNECTION_NAME="${CONNECTION_NAME:?Missing --CONNECTION_NAME}"
 
-D_FLAGS=$(python3 -c "
+D_ARGS=()
+while IFS= read -r KV; do
+  [[ -n "$KV" ]] && D_ARGS+=(-D "$KV")
+done < <(python3 -c "
 import yaml
 with open('$MANIFEST') as f:
     m = yaml.safe_load(f)
 t = m.get('templating', {})
 merged = {**t.get('defaults', {}), **t.get('configurations', {}).get('$TARGET', {})}
 for k, v in merged.items():
-    print(f'-D \"{k}={v}\"')
+    print(f'{k}={v}')
 ")
 
 echo "Running $SQL_FILE (target=$TARGET, connection=$CONNECTION_NAME)"
-echo "Variables: $(echo "$D_FLAGS" | tr '\n' ' ')"
+echo "Variables: ${D_ARGS[*]}"
 
-eval snow sql -f "$SQL_FILE" -c "$CONNECTION_NAME" --enable-templating JINJA "$D_FLAGS"
+snow sql -f "$SQL_FILE" -c "$CONNECTION_NAME" --enable-templating JINJA "${D_ARGS[@]}"
 
 echo "✅ $SQL_FILE completed."

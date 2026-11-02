@@ -54,6 +54,21 @@ RUN echo "docker ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 # Install Snowflake CLI and SQLFluff
 RUN pip install --no-cache-dir 'snowflake-cli>=3.18.0' pyyaml sqlfluff
 
+# Local CI support (local-ci/run.sh): node on PATH for JS actions under act,
+# plus act and the docker CLI so this image can also serve the local-ci service
+ARG ACT_VERSION=0.2.84
+ARG DOCKER_CLI_VERSION=27.5.1
+ARG OTEL_CLI_VERSION=0.4.5
+RUN set -eux; \
+  ln -sf /home/docker/actions-runner/externals/node24/bin/node /usr/local/bin/node; \
+  if [ "${TARGETARCH}" = "arm64" ]; then ACT_ARCH=arm64; DOCKER_ARCH=aarch64; else ACT_ARCH=x86_64; DOCKER_ARCH=x86_64; fi; \
+  curl -fsSL "https://github.com/nektos/act/releases/download/v${ACT_VERSION}/act_Linux_${ACT_ARCH}.tar.gz" \
+    | tar -xz -C /usr/local/bin act; \
+  curl -fsSL "https://download.docker.com/linux/static/stable/${DOCKER_ARCH}/docker-${DOCKER_CLI_VERSION}.tgz" \
+    | tar -xz -C /usr/local/bin --strip-components=1 docker/docker; \
+  curl -fsSL "https://github.com/equinix-labs/otel-cli/releases/download/v${OTEL_CLI_VERSION}/otel-cli_${OTEL_CLI_VERSION}_linux_${TARGETARCH}.tar.gz" \
+    | tar -xz -C /usr/local/bin otel-cli
+
 # Set environment PATH
 ENV PATH="/usr/local/sonar-scanner/bin:/usr/local/bin:${PATH}"
 
@@ -62,7 +77,17 @@ COPY *.sh /usr/local/bin/
 COPY *.py /usr/local/bin/
 COPY *.sqltest /usr/local/bin/
 COPY *.cfg /usr/local/bin/
-RUN chmod +x /usr/local/bin/*.sh
+# Transition: old versioned script names -> new names (remove after one release)
+RUN chmod +x /usr/local/bin/*.sh && \
+  cd /usr/local/bin && \
+  ln -s snowflake-config-setup.sh github-runner_v1.sh && \
+  ln -s render-sql.sh render-sql_v1.sh && \
+  ln -s snowflake-clone-schema.sh snowflake-clone-schema_v3.sh && \
+  ln -s snowflake-drop-clone-schema.sh snowflake-drop-clone-schema_v3.sh && \
+  ln -s snowflake-deploy-dcm.sh snowflake-deploy-dcm_v1.sh && \
+  ln -s snowflake-extract-dependencies.sh snowflake-extract-dependencies_v1.sh && \
+  ln -s sonar-scan.sh sonar-scanner_v2.sh && \
+  ln -s sql-validate.sh sql_validation_v4.sh
 
 COPY unitth.jar /usr/local/bin/
 COPY unitth.properties /usr/local/bin/

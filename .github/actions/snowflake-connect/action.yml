@@ -39,11 +39,12 @@ runs:
           echo "connection-name=default" >> $GITHUB_OUTPUT
         else
           export SNOW_CONFIG_B64="${{ inputs.snow_config_b64 }}"
-          bash /usr/local/bin/github-runner_v1.sh
+          bash /usr/local/bin/snowflake-config-setup.sh
           CONNECTION_NAME=$(grep -oP '^\[connections\.\K[^\]]+' $HOME/.snowflake/config.toml | head -1)
+          PAT=$(grep -oP '^token\s*=\s*"\K[^"]+' $HOME/.snowflake/config.toml | head -1 || true)
+          [[ -n "$PAT" ]] && echo "::add-mask::$PAT"
           echo "CONNECTION_NAME=$CONNECTION_NAME" >> $GITHUB_ENV
           echo "connection-name=$CONNECTION_NAME" >> $GITHUB_OUTPUT
         fi
-        if [[ -f "$HOME/.sonar_env" ]]; then
-          grep '^SONAR_' "$HOME/.sonar_env" >> $GITHUB_ENV || true
-        fi
+        # SONAR_TOKEN is deliberately NOT exported to $GITHUB_ENV: GitHub prints
+        # job env in every step header. sonar-scanner reads ~/.sonar_env itself.

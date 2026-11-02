@@ -7,6 +7,7 @@ if [[ -z "${SONAR_TOKEN:-}" && -f "$HOME/.sonar_env" ]]; then
 fi
 
 SONAR_TOKEN="${SONAR_TOKEN:?Missing SONAR_TOKEN}"
+[[ -n "${GITHUB_ACTIONS:-}" ]] && echo "::add-mask::$SONAR_TOKEN"
 PROJECT_KEY="${PROJECT_KEY:?Missing PROJECT_KEY}"
 SONAR_HOST="${SONAR_HOST:-http://sonarqube:9000}"
 
@@ -33,7 +34,9 @@ else
   fi
 fi
 
-if [[ -f /.dockerenv ]] || grep -qE '/docker/|/lxc/' /proc/1/cgroup 2>/dev/null; then
+if [[ -n "${GITHUB_WORKSPACE:-}" ]]; then
+  PROJECT_BASE_DIR="$GITHUB_WORKSPACE"
+elif [[ -f /.dockerenv ]] || grep -qE '/docker/|/lxc/' /proc/1/cgroup 2>/dev/null; then
   PROJECT_BASE_DIR="/home/docker/actions-runner/_work/$PROJECT_KEY/$PROJECT_KEY"
 elif [[ "$(uname)" == "Darwin" ]]; then
   PROJECT_BASE_DIR="${BASE_WORKSPACE:-$HOME/workspace}/$PROJECT_KEY"
