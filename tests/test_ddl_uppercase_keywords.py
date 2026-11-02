@@ -1,4 +1,5 @@
 """Tests for ddl_uppercase_keywords.py."""
+
 from __future__ import annotations
 
 import sys

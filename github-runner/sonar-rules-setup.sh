@@ -184,7 +184,9 @@ create_rule "Table_names_must_begin_with_a_3_character_alphanumeric_component_co
 
 echo ""
 echo "=== Cleanup test rule ==="
-curl -s -o /dev/null -u "$SONAR_AUTH" -X POST "$SONAR_HOST/api/rules/delete" -d "key=txt:test_rule_1" 2>/dev/null && echo "Deleted test_rule_1" || true
+if curl -s -o /dev/null -u "$SONAR_AUTH" -X POST "$SONAR_HOST/api/rules/delete" -d "key=txt:test_rule_1" 2>/dev/null; then
+  echo "Deleted test_rule_1"
+fi
 
 echo ""
 echo "=== Final count ==="

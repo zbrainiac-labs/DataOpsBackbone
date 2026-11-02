@@ -130,5 +130,7 @@ SELECT GET_DDL('DATABASE','$SOURCE_DATABASE')" --format=csv | tail -n +2 | tr -d
 echo "Done: $FINAL_OUTPUT_DIR/deps.csv + $FINAL_OUTPUT_DIR/ddl.sql"
 
 if [[ -d "/home/docker/dependencies" ]]; then
-  cp -f "$FINAL_OUTPUT_DIR/deps.csv" "$FINAL_OUTPUT_DIR/ddl.sql" /home/docker/dependencies/ 2>/dev/null && echo "Copied to shared dependencies volume" || true
+  if cp -f "$FINAL_OUTPUT_DIR/deps.csv" "$FINAL_OUTPUT_DIR/ddl.sql" /home/docker/dependencies/ 2>/dev/null; then
+    echo "Copied to shared dependencies volume"
+  fi
 fi

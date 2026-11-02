@@ -1,4 +1,5 @@
 """Tests for the custom regex rules (DO01-DO28) via scan_raw_sql."""
+
 from __future__ import annotations
 
 import importlib.util
@@ -53,9 +54,8 @@ class TestScanRawSql:
         # DO25 (TARGET_LAG) is a known false positive on multi-line DDL because
         # the regex lookahead only checks the CREATE line, not subsequent lines.
         violations = [v for v in violations if v["rule"] != "DO25"]
-        assert len(violations) == 0, (
-            f"Expected 0 violations in good_example.sql, got {len(violations)}: "
-            + ", ".join(f"[{v['rule']}] line {v['line']}: {v['text']}" for v in violations[:5])
+        assert len(violations) == 0, f"Expected 0 violations in good_example.sql, got {len(violations)}: " + ", ".join(
+            f"[{v['rule']}] line {v['line']}: {v['text']}" for v in violations[:5]
         )
 
     def test_bad_sql_has_violations(self, bad_sql: str) -> None:
@@ -79,18 +79,12 @@ class TestPerRuleTrigger:
         violations = scan_raw_sql(snippet, RULES)
         fired = {v["rule"] for v in violations}
         assert rule_code in fired, (
-            f"Expected {rule_code} to fire on: {snippet!r}\n"
-            f"  Rules that fired: {fired or 'none'}"
+            f"Expected {rule_code} to fire on: {snippet!r}\n  Rules that fired: {fired or 'none'}"
         )
 
     def test_do25_multiline(self) -> None:
         """DO25: Dynamic Table without TARGET_LAG requires multi-line SQL."""
-        sql = (
-            "CREATE OR REPLACE DYNAMIC TABLE IOTI_RAW_DT_NO_LAG\n"
-            "    WAREHOUSE = MD_TEST_WH\n"
-            "AS\n"
-            "SELECT 1 AS col;"
-        )
+        sql = "CREATE OR REPLACE DYNAMIC TABLE IOTI_RAW_DT_NO_LAG\n    WAREHOUSE = MD_TEST_WH\nAS\nSELECT 1 AS col;"
         violations = scan_raw_sql(sql, RULES)
         fired = {v["rule"] for v in violations}
         assert "DO25" in fired, f"Expected DO25, got: {fired}"
@@ -108,6 +102,5 @@ class TestBadExampleCoverage:
         violations = scan_raw_sql(bad_sql, RULES)
         fired = {v["rule"] for v in violations}
         assert rule_code in fired, (
-            f"bad_example.sql should trigger {rule_code} but didn't.\n"
-            f"  Rules fired: {sorted(fired)}"
+            f"bad_example.sql should trigger {rule_code} but didn't.\n  Rules fired: {sorted(fired)}"
         )

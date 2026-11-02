@@ -43,7 +43,7 @@ gh_token() {  # $1 = registration-token | remove-token
 # already removed by GitHub; the call then simply fails and is ignored).
 cleanup() {
   echo "Stopping runner ${RUNNER_NAME}..."
-  [[ -n "${RUNNER_PID:-}" ]] && kill "$RUNNER_PID" 2>/dev/null || true
+  if [[ -n "${RUNNER_PID:-}" ]]; then kill "$RUNNER_PID" 2>/dev/null || true; fi
   if [[ -f .runner ]]; then
     ./config.sh remove --token "$(gh_token remove-token)" >/dev/null 2>&1 || true
   fi

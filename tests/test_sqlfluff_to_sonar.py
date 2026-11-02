@@ -1,4 +1,5 @@
 """Tests for sqlfluff_to_sonar.py."""
+
 from __future__ import annotations
 
 import json
@@ -9,7 +10,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "github-runner"))
 
 from sqlfluff_to_sonar import convert
-
 
 SAMPLE_SQLFLUFF_OUTPUT = [
     {

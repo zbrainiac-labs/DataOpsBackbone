@@ -14,11 +14,11 @@ Output: CTRF JSON report (same format as sql-validate.sh)
 
 from __future__ import annotations
 
-import sys
+import importlib.util
 import json
 import subprocess
+import sys
 import time
-import importlib.util
 from pathlib import Path
 from typing import Any
 
@@ -33,10 +33,13 @@ scan_raw_sql = _module.scan_raw_sql  # type: ignore[attr-defined]
 def run_sqlfluff(target: str, config_path: str | None) -> list[dict[str, Any]]:
     """Run sqlfluff lint and return parsed violations."""
     cmd = [
-        "sqlfluff", "lint",
+        "sqlfluff",
+        "lint",
         target,
-        "--dialect", "snowflake",
-        "--format", "json",
+        "--dialect",
+        "snowflake",
+        "--format",
+        "json",
     ]
     if config_path:
         cmd += ["--config", config_path]
@@ -48,13 +51,15 @@ def run_sqlfluff(target: str, config_path: str | None) -> list[dict[str, Any]]:
         for file_result in data:
             filepath = file_result.get("filepath", "")
             for v in file_result.get("violations", []):
-                violations.append({
-                    "file": filepath,
-                    "rule": v.get("code", ""),
-                    "description": v.get("description", ""),
-                    "line": v.get("start_line_no", 0),
-                    "category": "SQLFluff",
-                })
+                violations.append(
+                    {
+                        "file": filepath,
+                        "rule": v.get("code", ""),
+                        "description": v.get("description", ""),
+                        "line": v.get("start_line_no", 0),
+                        "category": "SQLFluff",
+                    }
+                )
     except (json.JSONDecodeError, TypeError) as e:
         print(f"WARNING: Failed to parse SQLFluff JSON output: {e}", file=sys.stderr)
         if result.stderr:
@@ -67,10 +72,7 @@ def run_custom_rules(target: str) -> list[dict[str, Any]]:
     violations = []
     target_path = Path(target)
 
-    if target_path.is_file():
-        sql_files = [target_path]
-    else:
-        sql_files = sorted(target_path.rglob("*.sql"))
+    sql_files = [target_path] if target_path.is_file() else sorted(target_path.rglob("*.sql"))
 
     for sql_file in sql_files:
         raw = sql_file.read_text(encoding="utf-8", errors="replace")
@@ -82,13 +84,15 @@ def run_custom_rules(target: str) -> list[dict[str, Any]]:
     return violations
 
 
-def print_text_report(sqlfluff_violations: list[dict[str, Any]], custom_violations: list[dict[str, Any]], elapsed_ms: int) -> int:
+def print_text_report(
+    sqlfluff_violations: list[dict[str, Any]], custom_violations: list[dict[str, Any]], elapsed_ms: int
+) -> int:
     total_sf = len(sqlfluff_violations)
     total_custom = len(custom_violations)
 
-    print(f"\n{'='*70}")
-    print(f" DataOps SQL Linter Results")
-    print(f"{'='*70}")
+    print(f"\n{'=' * 70}")
+    print(" DataOps SQL Linter Results")
+    print(f"{'=' * 70}")
 
     if sqlfluff_violations:
         print(f"\n--- SQLFluff violations ({total_sf}) ---")
@@ -102,30 +106,39 @@ def print_text_report(sqlfluff_violations: list[dict[str, Any]], custom_violatio
             print(f"    > {v['text']}")
 
     total = total_sf + total_custom
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print(f" Total: {total} violations ({total_sf} SQLFluff + {total_custom} custom rules) in {elapsed_ms}ms")
-    print(f"{'='*70}\n")
+    print(f"{'=' * 70}\n")
     return total
 
 
-def write_ctrf_report(sqlfluff_violations: list[dict[str, Any]], custom_violations: list[dict[str, Any]], elapsed_ms: int, output_path: str) -> None:
+def write_ctrf_report(
+    sqlfluff_violations: list[dict[str, Any]],
+    custom_violations: list[dict[str, Any]],
+    elapsed_ms: int,
+    output_path: str,
+) -> None:
     tests = []
     for v in sqlfluff_violations:
-        tests.append({
-            "name": f"[{v['rule']}] {v['description']}",
-            "status": "failed",
-            "duration": 0,
-            "message": f"{v['file']}:{v['line']}",
-            "suite": "SQLFluff",
-        })
+        tests.append(
+            {
+                "name": f"[{v['rule']}] {v['description']}",
+                "status": "failed",
+                "duration": 0,
+                "message": f"{v['file']}:{v['line']}",
+                "suite": "SQLFluff",
+            }
+        )
     for v in custom_violations:
-        tests.append({
-            "name": f"[{v['rule']}] {v['description']}",
-            "status": "failed",
-            "duration": 0,
-            "message": f"{v['file']}:{v['line']} — {v['text']}",
-            "suite": "DataOps Custom Rules",
-        })
+        tests.append(
+            {
+                "name": f"[{v['rule']}] {v['description']}",
+                "status": "failed",
+                "duration": 0,
+                "message": f"{v['file']}:{v['line']} — {v['text']}",
+                "suite": "DataOps Custom Rules",
+            }
+        )
 
     total = len(sqlfluff_violations) + len(custom_violations)
     ctrf = {

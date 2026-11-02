@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
-import json, sys, os
+import json
+import sys
+from typing import Any
 from xml.etree.ElementTree import Element, SubElement, tostring
+
 
 def convert(ctrf_path: str, output_path: str) -> None:
     with open(ctrf_path) as f:
@@ -9,7 +12,7 @@ def convert(ctrf_path: str, output_path: str) -> None:
     root = Element("testExecutions", version="1")
     tests = report.get("results", {}).get("tests", [])
 
-    file_groups = {}
+    file_groups: dict[str, list[dict[str, Any]]] = {}
     for test in tests:
         file_path = test.get("filePath", "sqlunit/tests.sqltest")
         file_groups.setdefault(file_path, []).append(test)
@@ -33,6 +36,7 @@ def convert(ctrf_path: str, output_path: str) -> None:
         f.write(tostring(root, encoding="unicode").encode("utf-8"))
 
     print(f"Converted {len(tests)} tests to {output_path}")
+
 
 if __name__ == "__main__":
     if len(sys.argv) != 3:

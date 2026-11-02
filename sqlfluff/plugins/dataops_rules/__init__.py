@@ -4,10 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlfluff.core.plugin import hookimpl
-from sqlfluff.core.rules import BaseRule, LintResult, RuleGhost
 import regex as re
-
 
 SAFETY = "Safety"
 SECURITY = "Security"
@@ -224,12 +221,14 @@ def scan_raw_sql(raw_sql: str, rules: list[dict[str, Any]]) -> list[dict[str, An
     for line_no, line in enumerate(lines, start=1):
         for rule in rules:
             if re.search(rule["pattern"], line):
-                violations.append({
-                    "rule": rule["code"],
-                    "name": rule["name"],
-                    "category": rule["category"],
-                    "description": rule["description"],
-                    "line": line_no,
-                    "text": line.strip(),
-                })
+                violations.append(
+                    {
+                        "rule": rule["code"],
+                        "name": rule["name"],
+                        "category": rule["category"],
+                        "description": rule["description"],
+                        "line": line_no,
+                        "text": line.strip(),
+                    }
+                )
     return violations

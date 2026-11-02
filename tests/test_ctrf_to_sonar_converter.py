@@ -1,4 +1,5 @@
 """Tests for ctrf_to_sonar_converter.py."""
+
 from __future__ import annotations
 
 import json
@@ -9,7 +10,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "github-runner"))
 
 from ctrf_to_sonar_converter import convert
-
 
 SAMPLE_CTRF = {
     "results": {

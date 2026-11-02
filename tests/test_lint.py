@@ -1,4 +1,5 @@
 """Tests for sqlfluff/lint.py (standalone linter). sqlfluff itself is mocked."""
+
 from __future__ import annotations
 
 import importlib.util
@@ -17,9 +18,11 @@ _spec = importlib.util.spec_from_file_location("dataops_lint", SQLFLUFF_DIR / "l
 lint = importlib.util.module_from_spec(_spec)  # type: ignore[arg-type]
 _spec.loader.exec_module(lint)  # type: ignore[union-attr]
 
-SQLFLUFF_JSON = json.dumps([
-    {"filepath": "a.sql", "violations": [{"code": "LT01", "description": "spacing", "start_line_no": 3}]},
-])
+SQLFLUFF_JSON = json.dumps(
+    [
+        {"filepath": "a.sql", "violations": [{"code": "LT01", "description": "spacing", "start_line_no": 3}]},
+    ]
+)
 
 
 def _fake_run(stdout: str, stderr: str = ""):
