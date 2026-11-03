@@ -26,7 +26,7 @@ feature branch ──> PR to main ──> merge to main ──> tag release
 ### 1. Feature Branch (local development)
 
 - Developer works on SQL objects in a consumer repo
-- Runs `e2e-test.sh` locally against Docker stack for fast feedback
+- Runs `local-ci/run.sh` locally against the Docker stack for fast feedback
 - SQLFluff + SonarQube scan results visible at `localhost:9000`
 
 ### 2. Pull Request (automated validation)

@@ -7,6 +7,9 @@
 # Exit:  0 = gate OK, 1 = gate failed / error, 2 = timeout
 # -----------------------------------------------------------------------------
 set -Eeuo pipefail
+LIB="$(dirname "${BASH_SOURCE[0]}")/lib.sh"; [[ -f "$LIB" ]] || LIB=/usr/local/bin/lib.sh
+# shellcheck source=/dev/null
+source "$LIB"
 
 REPORT="${1:-.scannerwork/report-task.txt}"
 TIMEOUT="${2:-300}"
@@ -24,7 +27,7 @@ CE_TASK_URL=$(grep -m1 '^ceTaskUrl=' "$REPORT" | cut -d= -f2-)
 
 api() { curl -sf -u "$SONAR_TOKEN:" "$1"; }
 
-echo "Waiting for analysis task: $CE_TASK_URL"
+log_info "Waiting for analysis task: $CE_TASK_URL"
 DEADLINE=$(( $(date +%s) + TIMEOUT ))
 while :; do
   TASK=$(api "$CE_TASK_URL")
@@ -40,10 +43,10 @@ done
 ANALYSIS_ID=$(jq -r '.task.analysisId' <<<"$TASK")
 GATE=$(api "$SERVER_URL/api/qualitygates/project_status?analysisId=$ANALYSIS_ID" | jq -r '.projectStatus.status')
 echo "quality-gate-status=$GATE" >> "${GITHUB_OUTPUT:-/dev/null}"
-echo "Quality Gate status: $GATE"
+log_info "Quality Gate status: $GATE"
 
 if [[ "$GATE" == "OK" ]]; then
   exit 0
 fi
-echo "::error::Quality Gate status: $GATE"
+log_error "Quality Gate status: $GATE"
 exit 1

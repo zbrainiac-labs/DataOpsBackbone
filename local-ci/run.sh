@@ -21,7 +21,7 @@
 # GITHUB_TOKEN set or gh logged in. Or run it containerized (no host tools):
 #   GITHUB_TOKEN=$(gh auth token) docker compose --profile local-ci run --rm local-ci --dry-run
 # Snowflake auth: PAT path only (OIDC is not available locally). Credentials come
-# from SNOW_CONFIG_B64 (env or file) or SNOW_ACCOUNT/SNOW_USER/SNOW_PAT in .env.
+# from SNOW_CONFIG_B64 (env) or SNOW_ACCOUNT/SNOW_USER/SNOW_PAT in .env.
 # -----------------------------------------------------------------------------
 set -Eeuo pipefail
 
@@ -94,9 +94,6 @@ JSON
 
 # --- 3. Secrets (never echoed; files are removed on exit)
 SNOW_CONFIG_B64="${SNOW_CONFIG_B64:-}"
-if [[ -z "$SNOW_CONFIG_B64" && -f "$BACKBONE/SNOW_CONFIG_B64" ]]; then
-  SNOW_CONFIG_B64=$(cat "$BACKBONE/SNOW_CONFIG_B64")
-fi
 if [[ -z "$SNOW_CONFIG_B64" && -f "$BACKBONE/.env" ]]; then
   SNOW_CONFIG_B64=$(
     set -a
@@ -130,7 +127,7 @@ echo "SONAR_TOKEN=$SONAR_TOKEN" > "$TMP/env"
 RUN_SEQ=$(date +%s)
 { echo "GITHUB_RUN_NUMBER=$RUN_SEQ"; echo "GITHUB_RUN_ID=$RUN_SEQ"; } >> "$TMP/env"
 
-# Send traces to Jaeger if it is running (./start.sh --with-observability)
+# Send traces to Jaeger if it is running (default with ./start.sh)
 if [[ -n "$(docker ps -q --filter label=com.docker.compose.service=jaeger)" ]]; then
   echo "OTEL_EXPORTER_OTLP_ENDPOINT=host.docker.internal:4317" >> "$TMP/env"
   echo "Tracing to Jaeger: http://localhost:16686 (service = project name, e.g. $PROJECT_NAME)"

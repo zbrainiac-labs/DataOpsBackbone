@@ -1,5 +1,8 @@
 #!/bin/bash
 set -Eeuo pipefail
+LIB="$(dirname "${BASH_SOURCE[0]}")/lib.sh"; [[ -f "$LIB" ]] || LIB=/usr/local/bin/lib.sh
+# shellcheck source=/dev/null
+source "$LIB"
 
 if [[ -z "${SONAR_TOKEN:-}" && -f "$HOME/.sonar_env" ]]; then
   # shellcheck source=/dev/null
@@ -13,23 +16,23 @@ SONAR_HOST="${SONAR_HOST:-http://sonarqube:9000}"
 
 SONAR_SCANNER="/usr/local/sonar-scanner/bin/sonar-scanner"
 
-echo "Checking if project '$PROJECT_KEY' exists in SonarQube..."
+log_info "Checking if project '$PROJECT_KEY' exists in SonarQube..."
 RESPONSE=$(curl -s -u "$SONAR_TOKEN:" "$SONAR_HOST/api/projects/search")
 
 if echo "$RESPONSE" | jq -e '.components? // [] | any(.key == "'"$PROJECT_KEY"'")' > /dev/null; then
-  echo "✅ Project '$PROJECT_KEY' already exists."
+  log_info "✅ Project '$PROJECT_KEY' already exists."
 else
-  echo "➕ Project '$PROJECT_KEY' not found. Creating it..."
+  log_info "➕ Project '$PROJECT_KEY' not found. Creating it..."
   CREATE_RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" -u "$SONAR_TOKEN:" -X POST "$SONAR_HOST/api/projects/create" \
     -d "name=$PROJECT_KEY" \
     -d "project=$PROJECT_KEY")
 
   if [ "$CREATE_RESPONSE" -eq 200 ]; then
-    echo "✅ Successfully created project '$PROJECT_KEY'."
+    log_info "✅ Successfully created project '$PROJECT_KEY'."
   elif [ "$CREATE_RESPONSE" -eq 400 ]; then
-    echo "⚠️ Project '$PROJECT_KEY' likely already exists. Continuing..."
+    log_info "Project '$PROJECT_KEY' already exists. Continuing..."
   else
-    echo "❌ Failed to create project. HTTP code: $CREATE_RESPONSE"
+    log_error "Failed to create project. HTTP code: $CREATE_RESPONSE"
     exit 1
   fi
 fi
@@ -47,17 +50,17 @@ fi
 EXTRA_ARGS=()
 SQLFLUFF_ISSUES="$PROJECT_BASE_DIR/sqlfluff_issues.json"
 if [[ -f "$SQLFLUFF_ISSUES" ]]; then
-  echo "SQLFluff issues found: $SQLFLUFF_ISSUES"
+  log_info "SQLFluff issues found: $SQLFLUFF_ISSUES"
   EXTRA_ARGS+=("-Dsonar.externalIssuesReportPaths=$SQLFLUFF_ISSUES")
 fi
 
 SONAR_TEST_REPORT="${PROJECT_BASE_DIR}/sonar_test_report.xml"
 if [[ -f "$SONAR_TEST_REPORT" ]]; then
-  echo "Test execution report found: $SONAR_TEST_REPORT"
+  log_info "Test execution report found: $SONAR_TEST_REPORT"
   EXTRA_ARGS+=("-Dsonar.testExecutionReportPaths=$SONAR_TEST_REPORT")
 fi
 
-echo "Running sonar-scanner..."
+log_info "Running sonar-scanner..."
 PROJECT_VERSION="${PROJECT_VERSION:-$(git -C "$PROJECT_BASE_DIR" describe --tags --always 2>/dev/null || echo 'unknown')}"
 "$SONAR_SCANNER" \
   -Dsonar.projectKey="$PROJECT_KEY" \

@@ -15,6 +15,9 @@
 # -----------------------------------------------------------------------------
 
 set +e
+LIB="$(dirname "${BASH_SOURCE[0]}")/lib.sh"; [[ -f "$LIB" ]] || LIB=/usr/local/bin/lib.sh
+# shellcheck source=/dev/null
+source "$LIB"
 set -u
 
 # --- Default values ---
@@ -32,8 +35,8 @@ for ARG in "$@"; do
     --CONNECTION_NAME=*)
       CONNECTION_NAME="${ARG#*=}" ;;
     *)
-      echo "❌ Unknown argument: $ARG"
-      echo "Usage: $0 --SOURCE_DATABASE=... --SOURCE_SCHEMA=... --OUTPUT_DIR=... --CONNECTION_NAME=..."
+      log_error "Unknown argument: $ARG"
+      log_info "Usage: $0 --SOURCE_DATABASE=... --SOURCE_SCHEMA=... --OUTPUT_DIR=... --CONNECTION_NAME=..."
       exit 1
       ;;
   esac
@@ -41,15 +44,15 @@ done
 
 # Validate required inputs
 if [[ -z "${SOURCE_DATABASE:-}" || -z "${SOURCE_SCHEMA:-}" || -z "${CONNECTION_NAME:-}" ]]; then
-  echo "❌ Missing required arguments."
-  echo "Required: --SOURCE_DATABASE --SOURCE_SCHEMA --CONNECTION_NAME [--OUTPUT_DIR=...]"
+  log_error "Missing required arguments."
+  log_info "Required: --SOURCE_DATABASE --SOURCE_SCHEMA --CONNECTION_NAME [--OUTPUT_DIR=...]"
   exit 1
 fi
 
 # Set default OUTPUT_DIR if not provided
 if [[ -z "${OUTPUT_DIR:-}" ]]; then
   if [[ -z "${PROJECT_KEY:-}" ]]; then
-    echo "❌ PROJECT_KEY is not set, and no --OUTPUT_DIR provided."
+    log_error "PROJECT_KEY is not set, and no --OUTPUT_DIR provided."
     exit 1
   fi
   OUTPUT_DIR="/home/docker/actions-runner/_work/${PROJECT_KEY}/${PROJECT_KEY}"
@@ -62,13 +65,13 @@ FINAL_OUTPUT_FILE_DEPENDENCIES="${FINAL_OUTPUT_DIR}/${OUTPUT_FILE_NAME}"
 # Ensure output directory exists
 mkdir -p "$FINAL_OUTPUT_DIR"
 
-echo "Extracting dependencies for schema: $SOURCE_DATABASE.$SOURCE_SCHEMA"
-echo "Using connection: $CONNECTION_NAME"
-echo "Output directory: $FINAL_OUTPUT_DIR"
-echo "Output file: $FINAL_OUTPUT_FILE_DEPENDENCIES"
+log_info "Extracting dependencies for schema: $SOURCE_DATABASE.$SOURCE_SCHEMA"
+log_info "Using connection: $CONNECTION_NAME"
+log_info "Output directory: $FINAL_OUTPUT_DIR"
+log_info "Output file: $FINAL_OUTPUT_FILE_DEPENDENCIES"
 
 # Run the dependency extraction SQL
-echo "Extracting dependencies..."
+log_info "Extracting dependencies..."
 timeout 120 snow sql -c "$CONNECTION_NAME" --format=csv -q "
 SELECT
     dep_obj.REFERENCED_DATABASE AS base_database,
@@ -104,33 +107,33 @@ SELECT
 
 DEPS_EXIT=$?
 if [ $DEPS_EXIT -eq 0 ]; then
-  echo "✅ Dependencies written to $FINAL_OUTPUT_DIR/deps.csv"
+  log_info "✅ Dependencies written to $FINAL_OUTPUT_DIR/deps.csv"
 else
-  echo "❌ Error writing output to $FINAL_OUTPUT_DIR/deps.csv"
+  log_error "Error writing output to $FINAL_OUTPUT_DIR/deps.csv"
   exit 1
 fi
 
 
-echo "Extracting DDL..."
+log_info "Extracting DDL..."
 DDL_FILTER="/usr/local/bin/ddl_uppercase_keywords.py"
 if [[ ! -f "$DDL_FILTER" ]]; then
   DDL_FILTER="$(dirname "$0")/ddl_uppercase_keywords.py"
 fi
 
 {
-  echo "-- ============================================================"
-  echo "-- DDL extract: $SOURCE_DATABASE"
-  echo "-- Generated: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  echo "-- Connection: $CONNECTION_NAME"
-  echo "-- ============================================================"
+  log_info "-- ============================================================"
+  log_info "-- DDL extract: $SOURCE_DATABASE"
+  log_info "-- Generated: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  log_info "-- Connection: $CONNECTION_NAME"
+  log_info "-- ============================================================"
   snow sql -c "$CONNECTION_NAME" -q "
 SELECT GET_DDL('DATABASE','$SOURCE_DATABASE')" --format=csv | tail -n +2 | tr -d '"'
 } | python3 "$DDL_FILTER" > "$FINAL_OUTPUT_DIR/ddl.sql"
 
-echo "Done: $FINAL_OUTPUT_DIR/deps.csv + $FINAL_OUTPUT_DIR/ddl.sql"
+log_info "Done: $FINAL_OUTPUT_DIR/deps.csv + $FINAL_OUTPUT_DIR/ddl.sql"
 
 if [[ -d "/home/docker/dependencies" ]]; then
   if cp -f "$FINAL_OUTPUT_DIR/deps.csv" "$FINAL_OUTPUT_DIR/ddl.sql" /home/docker/dependencies/ 2>/dev/null; then
-    echo "Copied to shared dependencies volume"
+    log_info "Copied to shared dependencies volume"
   fi
 fi

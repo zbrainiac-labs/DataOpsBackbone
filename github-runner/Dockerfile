@@ -1,38 +1,52 @@
+# Build Go tools from source with a current toolchain: the released binaries
+# are compiled with old Go/x/net versions that Trivy flags.
+FROM golang:1.27.3-trixie AS gotools
+ARG YQ_VERSION=v4.54.1
+ARG OTEL_CLI_VERSION=v0.4.5
+RUN set -eux; \
+  git clone --depth 1 --branch "${YQ_VERSION}" https://github.com/mikefarah/yq /src/yq; \
+  cd /src/yq; \
+  go get golang.org/x/net@latest && go mod tidy; \
+  CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/yq .; \
+  git clone --depth 1 --branch "${OTEL_CLI_VERSION}" https://github.com/equinix-labs/otel-cli /src/otel-cli; \
+  cd /src/otel-cli; \
+  go get -u ./... && go mod tidy; \
+  CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/otel-cli .
+
 # Base image
-FROM eclipse-temurin:21.0.7_6-jre-jammy
+FROM eclipse-temurin:21.0.13_9-jre-resolute
 
 # Set build arguments
 ARG TARGETARCH
-ARG RUNNER_VERSION="2.330.0"
+ARG RUNNER_VERSION="2.338.2"
 ARG DEBIAN_FRONTEND=noninteractive
 
 # Debug output
 RUN echo "🐳 Building for architecture: ${TARGETARCH}" && \
     echo "📦 Installing GitHub Actions Runner version: ${RUNNER_VERSION}"
 
-# Install required packages
+# Install required packages (Java comes from the temurin base image)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    unzip zip curl openjdk-21-jre python3 python3-pip python3-dev \
-    build-essential git jq ca-certificates libffi-dev libssl-dev file \
+    unzip zip curl python3 python3-venv \
+    git jq ca-certificates file \
     dumb-init sudo && \
-    curl -sL "https://github.com/mikefarah/yq/releases/latest/download/yq_linux_${TARGETARCH}" -o /usr/local/bin/yq && \
-    chmod +x /usr/local/bin/yq && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
+COPY --from=gotools /out/yq /out/otel-cli /usr/local/bin/
 
 
-# Install Sonar Scanner
-RUN curl -L -o sonar-scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-8.1.0.6389.zip && \
-    unzip sonar-scanner.zip -d /usr/local && \
-    mv /usr/local/sonar-scanner-* /usr/local/sonar-scanner && \
-    chmod +x /usr/local/sonar-scanner/bin/sonar-scanner && \
-    ln -s /usr/local/sonar-scanner/bin/sonar-scanner /usr/local/bin/sonar-scanner && \
-    rm sonar-scanner.zip
-
-# Create docker user
-RUN useradd -m docker
-
-# Map TARGETARCH for GitHub Actions runner (arm64 → arm)
+# Sonar Scanner, docker user, and the GitHub Actions runner (TARGETARCH arm64/amd64 -> arm64/x64)
 RUN set -eux; \
+  curl -fL -o sonar-scanner.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-8.3.1.16491.zip; \
+  unzip -q sonar-scanner.zip -d /usr/local; \
+  mv /usr/local/sonar-scanner-* /usr/local/sonar-scanner; \
+  chmod +x /usr/local/sonar-scanner/bin/sonar-scanner; \
+  ln -s /usr/local/sonar-scanner/bin/sonar-scanner /usr/local/bin/sonar-scanner; \
+  rm sonar-scanner.zip; \
+  # docker must be UID 1000 (sonar-init writes the token file as 1000:1000);
+  # Ubuntu 23.04+ images ship a default 'ubuntu' user with that UID
+  userdel -r ubuntu 2>/dev/null || true; \
+  useradd -m -u 1000 docker; \
+  echo "docker ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers; \
   if [ "${TARGETARCH}" = "arm64" ]; then \
     RUNNER_ARCH=arm64; \
   elif [ "${TARGETARCH}" = "amd64" ]; then \
@@ -47,30 +61,33 @@ RUN set -eux; \
   tar -xzf actions-runner.tar.gz -C /home/docker/actions-runner; \
   rm actions-runner.tar.gz; \
   /home/docker/actions-runner/bin/installdependencies.sh; \
+  # npm is bundled with the runner's node but never used; it carries most JS CVEs
+  rm -rf /home/docker/actions-runner/externals/node*/lib/node_modules/npm \
+         /home/docker/actions-runner/externals/node*/bin/npm /home/docker/actions-runner/externals/node*/bin/npx; \
   chown -R docker /home/docker/actions-runner
 
-RUN echo "docker ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
-
-# Install Snowflake CLI and SQLFluff
-RUN pip install --no-cache-dir 'snowflake-cli>=3.18.0' pyyaml sqlfluff
+# Install Snowflake CLI and SQLFluff into a venv (system Python is PEP 668 managed)
+ENV VIRTUAL_ENV=/opt/venv
+RUN python3 -m venv "$VIRTUAL_ENV" && \
+    "$VIRTUAL_ENV/bin/pip" install --no-cache-dir --upgrade pip setuptools && \
+    "$VIRTUAL_ENV/bin/pip" install --no-cache-dir --upgrade 'snowflake-cli>=3.18.0' pyyaml sqlfluff && \
+    "$VIRTUAL_ENV/bin/pip" uninstall -y pip && \
+    chown -R docker "$VIRTUAL_ENV"
 
 # Local CI support (local-ci/run.sh): node on PATH for JS actions under act,
 # plus act and the docker CLI so this image can also serve the local-ci service
-ARG ACT_VERSION=0.2.84
-ARG DOCKER_CLI_VERSION=27.5.1
-ARG OTEL_CLI_VERSION=0.4.5
+ARG ACT_VERSION=0.2.94
+ARG DOCKER_CLI_VERSION=29.9.2
 RUN set -eux; \
   ln -sf /home/docker/actions-runner/externals/node24/bin/node /usr/local/bin/node; \
   if [ "${TARGETARCH}" = "arm64" ]; then ACT_ARCH=arm64; DOCKER_ARCH=aarch64; else ACT_ARCH=x86_64; DOCKER_ARCH=x86_64; fi; \
   curl -fsSL "https://github.com/nektos/act/releases/download/v${ACT_VERSION}/act_Linux_${ACT_ARCH}.tar.gz" \
     | tar -xz -C /usr/local/bin act; \
   curl -fsSL "https://download.docker.com/linux/static/stable/${DOCKER_ARCH}/docker-${DOCKER_CLI_VERSION}.tgz" \
-    | tar -xz -C /usr/local/bin --strip-components=1 docker/docker; \
-  curl -fsSL "https://github.com/equinix-labs/otel-cli/releases/download/v${OTEL_CLI_VERSION}/otel-cli_${OTEL_CLI_VERSION}_linux_${TARGETARCH}.tar.gz" \
-    | tar -xz -C /usr/local/bin otel-cli
+    | tar -xz -C /usr/local/bin --strip-components=1 docker/docker
 
 # Set environment PATH
-ENV PATH="/usr/local/sonar-scanner/bin:/usr/local/bin:${PATH}"
+ENV PATH="/opt/venv/bin:/usr/local/sonar-scanner/bin:/usr/local/bin:${PATH}"
 
 # Copy helper scripts
 COPY *.sh /usr/local/bin/

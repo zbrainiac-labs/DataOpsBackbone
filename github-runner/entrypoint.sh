@@ -8,6 +8,9 @@
 # token is shared read-only via /sonar/.sonar_env.
 # -----------------------------------------------------------------------------
 set -euo pipefail
+LIB="$(dirname "${BASH_SOURCE[0]}")/lib.sh"; [[ -f "$LIB" ]] || LIB=/usr/local/bin/lib.sh
+# shellcheck source=/dev/null
+source "$LIB"
 
 GH_TOKEN=${ACCESS_TOKEN:-}
 GITHUB_OWNER=${GITHUB_OWNER:-}
@@ -17,7 +20,7 @@ RUNNER_NAME=${RUNNER_NAME:-"runner-$(hostname)"}
 RUNNER_LABELS=${RUNNER_LABELS:-}
 
 if [[ -z "$GH_TOKEN" || -z "$GITHUB_OWNER" ]]; then
-  echo "ERROR: ACCESS_TOKEN and GITHUB_OWNER must be set"; exit 1
+  die "ACCESS_TOKEN and GITHUB_OWNER must be set"
 fi
 if [[ "$RUNNER_SCOPE" == "org" ]]; then
   API_BASE="https://api.github.com/orgs/${GITHUB_OWNER}"
@@ -53,7 +56,7 @@ prune_offline_runners() {
   for id in $ids; do
     if curl -sf -o /dev/null -X DELETE -H "Authorization: token ${GH_TOKEN}" \
         -H "Accept: application/vnd.github+json" "${API_BASE}/actions/runners/${id}"; then
-      echo "Pruned offline runner registration ${id}"
+      log_info "Pruned offline runner registration ${id}"
     fi
   done
 }
@@ -63,12 +66,12 @@ prune_offline_runners() {
 # can't finish once dumb-init has signalled the runner too. Leftovers from hard
 # kills are pruned by the next runner start.
 cleanup() {
-  echo "Stopping runner ${RUNNER_NAME}..."
+  log_info "Stopping runner ${RUNNER_NAME}..."
   local id
   id=$(grep -o '"agentId": *[0-9]*' .runner 2>/dev/null | grep -o '[0-9]*$' || true)  # .runner has a BOM -> no jq
   if [[ -n "$id" ]] && curl -sf -o /dev/null --max-time 5 -X DELETE -H "Authorization: token ${GH_TOKEN}" \
       -H "Accept: application/vnd.github+json" "${API_BASE}/actions/runners/${id}"; then
-    echo "Deregistered runner ${RUNNER_NAME} (id ${id})"
+    log_info "Deregistered runner ${RUNNER_NAME} (id ${id})"
   fi
   if [[ -n "${RUNNER_PID:-}" ]]; then kill "$RUNNER_PID" 2>/dev/null || true; fi
   exit 0
@@ -85,7 +88,7 @@ REG_TOKEN=$(gh_token registration-token || true)
 ./config.sh --url "$CONFIG_URL" --token "$REG_TOKEN" --name "$RUNNER_NAME" \
   ${RUNNER_LABELS:+--labels "$RUNNER_LABELS"} --ephemeral --unattended --replace
 
-echo "Starting ephemeral runner ${RUNNER_NAME}..."
+log_info "Starting ephemeral runner ${RUNNER_NAME}..."
 ./run.sh &
 RUNNER_PID=$!
 wait "$RUNNER_PID"

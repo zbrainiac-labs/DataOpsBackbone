@@ -4,10 +4,17 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    groups:
+      actions:
+        patterns: ["*"]
   - package-ecosystem: "docker"
     directory: "/github-runner"
     schedule:
       interval: "monthly"
+    ignore:
+      # Stay on Java LTS; major jumps (e.g. 21 -> 25) are done manually
+      - dependency-name: "eclipse-temurin"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: "docker"
     directory: "/sonarqube"
     schedule:

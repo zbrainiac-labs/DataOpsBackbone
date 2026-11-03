@@ -16,6 +16,9 @@ FAKE_RUN=false
 RELEASE_NUM=""
 WORKSPACE_DIR="$(pwd)"
 set +e
+LIB="$(dirname "${BASH_SOURCE[0]}")/lib.sh"; [[ -f "$LIB" ]] || LIB=/usr/local/bin/lib.sh
+# shellcheck source=/dev/null
+source "$LIB"
 set -u
 
 # --- Argument parsing ---
@@ -34,23 +37,23 @@ for ARG in "$@"; do
     --FAKE_RUN=*)
       FAKE_RUN="${ARG#*=}" ;;
     *)
-      echo "❌ Unknown argument: $ARG"
-      echo "Usage: $0 --CLONE_DATABASE=... --CLONE_SCHEMA=... --CONNECTION_NAME=... --TEST_FILE=... [--RELEASE_NUM=...] [--FAKE_RUN=...]"
+      log_error "Unknown argument: $ARG"
+      log_info "Usage: $0 --CLONE_DATABASE=... --CLONE_SCHEMA=... --CONNECTION_NAME=... --TEST_FILE=... [--RELEASE_NUM=...] [--FAKE_RUN=...]"
       exit 1
       ;;
   esac
 done
 
-echo "FAKE_RUN is set to: $FAKE_RUN"
+log_info "FAKE_RUN is set to: $FAKE_RUN"
 
 # --- Validation ---
 if [[ -z "${CLONE_SCHEMA:-}" || -z "${CLONE_DATABASE:-}" || -z "${CONNECTION_NAME:-}" || -z "${TEST_FILE:-}" ]]; then
-  echo "❌ Missing required arguments."
+  log_error "Missing required arguments."
   exit 1
 fi
 
 if [[ ! -f "$TEST_FILE" ]]; then
-  echo "❌ Test file not found: $TEST_FILE"
+  log_error "Test file not found: $TEST_FILE"
   exit 1
 fi
 
@@ -62,23 +65,23 @@ fi
 UTC_TIMESTAMP=$(date -u +"%Y-%m-%dT%H%M%SZ")
 START_EPOCH_MS=$(($(date +%s) * 1000))
 TESTSUITE_NAME="${GITHUB_OWNER:-UnknownOwner}_${GITHUB_REPO:-${PROJECT_KEY:-UnknownRepo}}_SQLValidation"
-echo "TESTSUITE_NAME: $TESTSUITE_NAME"
+log_info "TESTSUITE_NAME: $TESTSUITE_NAME"
 
 # --- Runtime detection ---
 if [[ -f /.dockerenv ]] || grep -qE '/docker/|/lxc/' /proc/1/cgroup 2>/dev/null; then
-  echo "Running inside Docker container"
+  log_info "Running inside Docker container"
   REPORT_DIR="/home/docker/sql-report-vol"
   CTRF_REPORT_DIR="/home/docker/sql-unit-reports"
   # One UnitTH run store per project; run folders are deleted once stored.
   STORE_DIR="/home/docker/unitth-store"
 elif [[ "$(uname)" == "Darwin" ]]; then
-  echo "Running on macOS"
-  REPORT_DIR="$(pwd)/sql-report-vol"
+  log_info "Running on macOS"
+  REPORT_DIR="$(pwd)/.reports/unitth"
   CTRF_REPORT_DIR="$(pwd)/sql-unit-reports"
   STORE_DIR=""
 else
-  echo "Unknown system, defaulting to current dir"
-  REPORT_DIR="$(pwd)/sql-report-vol"
+  log_info "Unknown system, defaulting to current dir"
+  REPORT_DIR="$(pwd)/.reports/unitth"
   CTRF_REPORT_DIR="$(pwd)/sql-unit-reports"
   STORE_DIR=""
 fi
@@ -87,14 +90,14 @@ mkdir -p "$CTRF_REPORT_DIR"
 CTRF_REPORT_DIR="$(cd "$CTRF_REPORT_DIR" && pwd)"
 REPORT_SUBDIR="$CTRF_REPORT_DIR/$UTC_TIMESTAMP"
 if ! mkdir -p "$REPORT_SUBDIR"; then
-  echo "❌ Failed to create directory: $REPORT_SUBDIR"
+  log_error "Failed to create directory: $REPORT_SUBDIR"
   REPORT_SUBDIR="$CTRF_REPORT_DIR"
 fi
 CTRF_REPORT_FILE="$REPORT_SUBDIR/TEST_${UTC_TIMESTAMP}.json"
 
-echo "REPORT_DIR: $REPORT_DIR"
-echo "CTRF_REPORT_DIR: $CTRF_REPORT_DIR"
-echo "CTRF_REPORT_FILE: $CTRF_REPORT_FILE"
+log_info "REPORT_DIR: $REPORT_DIR"
+log_info "CTRF_REPORT_DIR: $CTRF_REPORT_DIR"
+log_info "CTRF_REPORT_FILE: $CTRF_REPORT_FILE"
 
 # --- Initialize test stats ---
 TOTAL_TESTS=0
@@ -125,14 +128,14 @@ run_test() {
       if RESULT=$(echo "$OUTPUT" | jq -r '.[0].RESULT' 2>/dev/null); then
         EXIT_CODE=0
       else
-        echo "❌ Failed to parse JSON output: $OUTPUT"
+        log_error "Failed to parse JSON output: $OUTPUT"
         EXIT_CODE=1
         RESULT="JSON_PARSE_ERROR"
       fi
     else
       local STDERR_CONTENT
       STDERR_CONTENT=$(strip_ansi < "$STDERR_FILE")
-      echo "❌ Snow CLI failed with exit code $CLI_EXIT_CODE: $STDERR_CONTENT"
+      log_error "Snow CLI failed with exit code $CLI_EXIT_CODE: $STDERR_CONTENT"
       EXIT_CODE=$CLI_EXIT_CODE
       RESULT="CLI_ERROR"
       OUTPUT="$STDERR_CONTENT"
@@ -159,13 +162,13 @@ run_test() {
       ((FAILED_TESTS++))
       STATUS="failed"
       MESSAGE="Expected '$EXPECTED_TRIMMED', got '$RESULT_TRIMMED'"
-      echo "❌ TEST FAILED: $TEST_NAME"
-      echo "   Expected: '$EXPECTED_TRIMMED'"
-      echo "   Actual:   '$RESULT_TRIMMED'"
+      log_error "TEST FAILED: $TEST_NAME"
+      log_info "   Expected: '$EXPECTED_TRIMMED'"
+      log_info "   Actual:   '$RESULT_TRIMMED'"
     else
       ((PASSED_TESTS++))
       STATUS="passed"
-      echo "✅ TEST PASSED: $TEST_NAME"
+      log_info "✅ TEST PASSED: $TEST_NAME"
     fi
   fi
 
@@ -193,7 +196,7 @@ while IFS='|' read -r description sql expected; do
   if [[ -z "$description" || "$description" =~ ^# ]]; then
     continue
   fi
-  echo "Processing: desc='$description', sql='$sql', expected='$expected'"
+  log_info "Processing: desc='$description', sql='$sql', expected='$expected'"
   run_test "$description" "$sql" "$expected"
 done < "$TEST_FILE"
 
@@ -235,52 +238,55 @@ jq -n \
     }
   }' > "$CTRF_REPORT_FILE"
 
-echo "CTRF_REPORT_FILE: $CTRF_REPORT_FILE"
+log_info "CTRF_REPORT_FILE: $CTRF_REPORT_FILE"
 
 # --- Final summary ---
-echo -e "\n📊 Summary: $TOTAL_TESTS total, $FAILED_TESTS failed, $SKIP_COUNT skipped."
+log_info "📊 Summary: $TOTAL_TESTS total, $FAILED_TESTS failed, $SKIP_COUNT skipped."
 if [[ "$FAILED_TESTS" -eq 0 ]]; then
-  echo "✅ All tests passed."
+  log_info "✅ All tests passed."
 else
-  echo "❌ Some tests failed. See report at $CTRF_REPORT_FILE"
+  log_error "Some tests failed. See report at $CTRF_REPORT_FILE"
 fi
 
 # --- Generate Unit History Report with unitth.jar if available ---
 mkdir -p "$REPORT_DIR"
 
-echo "Running unitth.jar ..."
-echo "REPORT_DIR: $REPORT_DIR"
-echo "CTRF_REPORT_DIR: $CTRF_REPORT_DIR"
+log_info "Running unitth.jar ..."
+log_info "REPORT_DIR: $REPORT_DIR"
+log_info "CTRF_REPORT_DIR: $CTRF_REPORT_DIR"
 
 if [[ -z "$STORE_DIR" ]]; then
-  echo "Executing: java -Dunitth.report.dir=\"$REPORT_DIR\" -jar unitth.jar --ctrf $CTRF_REPORT_DIR/*"
-  cd /usr/local/bin && java -Dunitth.report.dir="$REPORT_DIR" -jar unitth.jar --ctrf "$CTRF_REPORT_DIR"/* || echo "unitth report generation failed (non-critical)"
+  log_info "Executing: java -Dunitth.report.dir=\"$REPORT_DIR\" -jar unitth.jar --ctrf $CTRF_REPORT_DIR/*"
+  if ! (cd /usr/local/bin && java -Dunitth.report.dir="$REPORT_DIR" -jar unitth.jar --ctrf "$CTRF_REPORT_DIR"/*); then
+    log_warn "unitth report generation failed (non-critical)"
+  fi
   exit 0
 fi
 
 # Keep a copy in the job workspace for the SonarQube conversion step.
-mkdir -p "$WORKSPACE_DIR/sql-unit-reports" && cp "$CTRF_REPORT_FILE" "$WORKSPACE_DIR/sql-unit-reports/" \
-  || echo "⚠️ Could not copy the CTRF report into the workspace"
+if ! { mkdir -p "$WORKSPACE_DIR/sql-unit-reports" && cp "$CTRF_REPORT_FILE" "$WORKSPACE_DIR/sql-unit-reports/"; }; then
+  log_warn "Could not copy the CTRF report into the workspace"
+fi
 
 # Store name = project (owner_repo), file-system safe; must match migrate-ctrf-history.sh.
 STORE_NAME="${TESTSUITE_NAME%_SQLValidation}"
 STORE_FILE="$STORE_DIR/${STORE_NAME//[^A-Za-z0-9._-]/_}.json"
 mkdir -p "$STORE_DIR"
-echo "STORE_FILE: $STORE_FILE"
+log_info "STORE_FILE: $STORE_FILE"
 UNITTH_LOG=$(mktemp)
-echo "Executing: java -Dunitth.report.dir=\"$REPORT_DIR\" -jar unitth.jar --store \"$STORE_FILE\" --store-dir \"$STORE_DIR\" --ctrf $REPORT_SUBDIR"
+log_info "Executing: java -Dunitth.report.dir=\"$REPORT_DIR\" -jar unitth.jar --store \"$STORE_FILE\" --store-dir \"$STORE_DIR\" --ctrf $REPORT_SUBDIR"
 (cd /usr/local/bin && java -Dunitth.report.dir="$REPORT_DIR" -jar unitth.jar \
     --store "$STORE_FILE" --store-dir "$STORE_DIR" --ctrf "$REPORT_SUBDIR") 2>&1 | tee "$UNITTH_LOG" \
-  || echo "unitth report generation failed (non-critical)"
+  || log_warn "unitth report generation failed (non-critical)"
 
 # Delete the run folder only if UnitTH confirmed it stored this one run, and
 # only if it is the folder created by this script (never the parent).
 if grep -qE "found=1 .*ingest=ok" "$UNITTH_LOG" \
     && [[ "$REPORT_SUBDIR" != "$CTRF_REPORT_DIR" ]] \
     && [[ "$(basename "$REPORT_SUBDIR")" == "$UTC_TIMESTAMP" ]]; then
-  rm -rf -- "$REPORT_SUBDIR" && echo "🧹 Stored in run store, removed $REPORT_SUBDIR"
+  rm -rf -- "$REPORT_SUBDIR" && log_info "🧹 Stored in run store, removed $REPORT_SUBDIR"
 else
-  echo "⚠️ Run not confirmed in the run store, keeping $REPORT_SUBDIR"
+  log_warn "Run not confirmed in the run store, keeping $REPORT_SUBDIR"
 fi
 rm -f "$UNITTH_LOG"
 
