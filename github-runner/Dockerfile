@@ -1,17 +1,21 @@
 # Build Go tools from source with a current toolchain: the released binaries
-# are compiled with old Go/x/net versions that Trivy flags.
-FROM golang:1.27.3-trixie AS gotools
+# are compiled with old Go/x/net versions that Trivy flags. Runs on the build
+# host's platform and cross-compiles for the target (no emulation).
+FROM --platform=$BUILDPLATFORM golang:1.27.3-trixie AS gotools
+ARG TARGETOS
+ARG TARGETARCH
 ARG YQ_VERSION=v4.54.1
 ARG OTEL_CLI_VERSION=v0.4.5
+ENV CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH}
 RUN set -eux; \
   git clone --depth 1 --branch "${YQ_VERSION}" https://github.com/mikefarah/yq /src/yq; \
   cd /src/yq; \
   go get golang.org/x/net@latest && go mod tidy; \
-  CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/yq .; \
+  go build -trimpath -ldflags="-s -w" -o /out/yq .; \
   git clone --depth 1 --branch "${OTEL_CLI_VERSION}" https://github.com/equinix-labs/otel-cli /src/otel-cli; \
   cd /src/otel-cli; \
   go get -u ./... && go mod tidy; \
-  CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/otel-cli .
+  go build -trimpath -ldflags="-s -w" -o /out/otel-cli .
 
 # Base image
 FROM eclipse-temurin:21.0.13_9-jre-resolute
