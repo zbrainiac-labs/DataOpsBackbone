@@ -1,6 +1,6 @@
 # **DataOps Unchained: Infrastructure that Scales**
 
-[![Docker Build and Push to Docker Hub (Multi-Arch)](https://github.com/zbrainiac-labs/DataOpsBackbone/actions/workflows/docker-publish.yml/badge.svg?branch=main)](https://github.com/zbrainiac-labs/DataOpsBackbone/actions/workflows/docker-publish.yml)
+[![CI](https://github.com/zbrainiac-labs/DataOpsBackbone/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/zbrainiac-labs/DataOpsBackbone/actions/workflows/ci.yml)
 
 > **A hands-on reference architecture for fully automated SQL code quality pipelines using SonarQube, GitHub Actions, and Snowflake.**
 
@@ -260,9 +260,9 @@ When disabled (default), quality gate failures are reported but do not block the
 DataOpsBackbone/
 ├── .github/workflows/
 │   ├── dataops-pipeline.yml    # Reusable pipeline (6 jobs + finish/trace), every step traced
-│   └── docker-publish.yml      # Docker image CI
+│   └── ci.yml                  # Lint/tests, Trivy, SonarQube gate; publishes images from main/tags
 ├── github-runner/
-│   ├── Dockerfile              # Runner image (SQLFluff, yq, act, docker CLI, otel-cli)
+│   ├── Dockerfile              # Runner image (Ubuntu 26.04, SQLFluff, yq, act, docker CLI, otel-cli)
 │   ├── entrypoint.sh           # Ephemeral runner registration (one job per registration)
 │   ├── lib.sh                  # Step helpers: retry, otel_step, otel_span (loaded via BASH_ENV)
 │   ├── snowflake-config-setup.sh       # Decode SNOW_CONFIG_B64 (PAT fallback)
@@ -281,7 +281,6 @@ DataOpsBackbone/
 │   ├── snowflake-deploy-dcm.sh
 │   ├── snowflake-extract-dependencies.sh
 │   ├── render-sql.sh           # Jinja-style template rendering
-│   ├── e2e-test.sh             # Manual end-to-end test against the Docker stack
 │   ├── unitth.jar              # UnitTestHistory v3.0
 │   └── tests.sqltest           # Sample test file
 ├── local-ci/
@@ -294,7 +293,11 @@ DataOpsBackbone/
 │   └── test_sql/               # Good/bad SQL examples for testing
 ├── docs/
 │   ├── QUICKSTART.md           # 15-minute first pipeline guide
-│   └── TROUBLESHOOTING.md      # Per-job failure/recovery guide + local simulation
+│   ├── TROUBLESHOOTING.md      # Per-job failure/recovery guide + local simulation
+│   ├── PROMOTION.md            # Promotion flow dev -> prod
+│   ├── SQL-RULES.md            # Rule regex patterns, scanner config, rule ownership
+│   └── OBSERVABILITY.md        # Pipeline tracing (OpenTelemetry + Jaeger)
+├── jaeger/config.yaml          # Jaeger v2 config (OTLP in, Badger, 7 days)
 ├── sonarqube/
 │   ├── Dockerfile              # Custom SonarQube image
 │   ├── quality-profiles/       # Exported custom quality profiles
@@ -302,8 +305,8 @@ DataOpsBackbone/
 ├── nginx/default.conf          # Nginx for test report serving
 ├── images/                     # Documentation images
 ├── sonar-project.properties    # Self-scan config for this repo
-├── docker-compose.yml          # SonarQube, sonar-init, 2 ephemeral runners, nginx; profiles: local-ci, observability
-└── start.sh                    # One-command startup (detached); --with-observability adds Jaeger
+├── docker-compose.yml          # SonarQube, sonar-init, 2 ephemeral runners, Jaeger, nginx; profile: local-ci
+└── start.sh                    # One-command startup (detached, Jaeger included); --no-observability skips it
 ```
 
 ---
@@ -375,167 +378,9 @@ Examples:
 - `ICGI_RAW_FF_XML` -- ICG domain, Ingestion repo, raw file format
 
 ---
-## SQL Linting Rules and Regex Patterns
-This list provides a few examples of SQL validation rules, each of which is paired with a regular expression (regex) that can be used to identify non-compliant code using the Community Text plugin of SonarQube.
+## SQL Linting Rules
 
-Backups of these rules, which can be restored as a Quality Profile, are available in the repository ([link](backup/2026-04-27_quality_profiles_text_plugin.xml)). Rules are also auto-created at runner startup via `sonar-rules-setup.sh`.
-
-### Safety Rules
-
-#### 1. Disallow `CREATE SCHEMA` without `IF NOT EXISTS` or `REPLACE`
-```regex
-(?i)^\s*CREATE\s+(?!OR\s+REPLACE\b)(?!.*\bIF\s+NOT\s+EXISTS\b).*?\bSCHEMA\b
-```
-
-#### 2. Disallow CREATE TABLE without IF NOT EXISTS or REPLACE
-```regex
-(?is)^(?!\s*--).*CREATE\s+(?!OR\s+REPLACE\b|.*IF\s+NOT\s+EXISTS\b).*TABLE\b
-```
-
-#### 3. Disallow CREATE statements with hardcoded database and/or schema prefix
-```regex
-(?i)^(?!\s*--)\s*create\s+(or\s+replace\s+)?(table|view|schema)\s+(if\s+not\s+exists\s+)?[a-z0-9_]+\.[a-z0-9_]+(\.[a-z0-9_]+)?
-```
-
-#### 4. Disallow GRANT statements to PUBLIC
-```regex
-(?i)^(?!\s*--).*grant\s+.*\s+to\s+public\b
-```
-
-#### 5. Disallow dropping objects without IF EXISTS
-```regex
-(?i)^\s*DROP\s+(SCHEMA|TABLE|VIEW|DYNAMIC\s+TABLE|STAGE|FILE\s+FORMAT|PROCEDURE|FUNCTION|TASK)\s+(?!IF\s+EXISTS\b)
-```
-
-#### 6. Disallow hardcoded USE DATABASE, USE SCHEMA, or USE ROLE statements
-```regex
-(?i)^(?!\s*--)\s*USE\s+(DATABASE|SCHEMA|ROLE)\b
-```
-
-### Data Type Rules
-
-#### 7. Disallow TIMESTAMP_NTZ and TIMESTAMP_LTZ (only TIMESTAMP_TZ allowed)
-```regex
-^(?!\s*--).*\bTIMESTAMP_(NTZ|LTZ)(\s*\(\s*\d+\s*\))?\b
-```
-
-### Naming Convention Rules
-
-#### 8. Schema names must follow `{DOMAIN}_{MATURITY}_` prefix pattern
-```regex
-(?i)^(?!\s*--)\s*CREATE\s+(OR\s+REPLACE\s+)?SCHEMA\s+(IF\s+NOT\s+EXISTS\s+)?(?:[a-z0-9_]+\.)?(?!RAW_|CUR_|AGG_|GOL_|REF_)[a-z0-9_]+;
-```
-
-#### 9. Schema names must end with version pattern `_vNNN`
-```regex
-(?i)^(?!\s*--)\s*CREATE\s+(OR\s+REPLACE\s+)?SCHEMA\s+(IF\s+NOT\s+EXISTS\s+)?(?:[a-z0-9_]+\.)?[a-z0-9_]+(?<!_v\d{3});
-```
-
-#### 10. Table names must follow `{DOM}{COMP}_{MAT}_{TB}_` pattern
-```regex
-(?i)^(?!\s*--)\s*CREATE\s+(OR\s+REPLACE\s+)?(?!DYNAMIC\s)TABLE\s+(IF\s+NOT\s+EXISTS\s+)?(?:[A-Z0-9_]+\.){0,2}(?![A-Z0-9]{3}[A-Z]_(RAW|CUR|AGG|GOL)_TB_)[A-Z_][A-Z0-9_]*
-```
-
-#### 11. View names must follow `{DOM}{COMP}_{MAT}_{VW}_` pattern
-```regex
-(?i)^(?!\s*--)\s*CREATE\s+(OR\s+REPLACE\s+)?VIEW\s+(?:[A-Z0-9_]+\.){0,2}(?![A-Z0-9]{3}[A-Z]_(RAW|CUR|AGG|GOL)_VW_)[A-Z_][A-Z0-9_]*
-```
-
-#### 12. Dynamic Table names must follow `{DOM}{COMP}_{MAT}_{DT}_` pattern
-```regex
-(?i)^(?!\s*--)\s*CREATE\s+(OR\s+REPLACE\s+)?DYNAMIC\s+TABLE\s+(?:[A-Z0-9_]+\.){0,2}(?![A-Z0-9]{3}[A-Z]_(RAW|CUR|AGG|GOL)_DT_)[A-Z_][A-Z0-9_]*
-```
-
-#### 13. Stage names must follow `{DOM}{COMP}_{MAT}_{ST}_` pattern
-```regex
-(?i)^(?!\s*--)\s*CREATE\s+(OR\s+REPLACE\s+)?STAGE\s+(?:[A-Z0-9_]+\.){0,2}(?![A-Z0-9]{3}[A-Z]_(RAW|CUR|AGG|GOL)_ST_)[A-Z_][A-Z0-9_]*
-```
-
-### Dependency Rules
-
-#### 14. Disallow Cross-Database Dependencies
-```regex
-^.*cross_db_true.*$
-```
-
-#### 15. Disallow Cross-Schema Dependencies
-```regex
-^.*cross_schema_true.*$
-```
-
-### Security & Access Control Rules
-
-#### 16. Disallow GRANT ALL PRIVILEGES
-```regex
-(?i)^(?!\s*--)\s*GRANT\s+ALL\s+(PRIVILEGES\s+)?ON\b
-```
-
-#### 17. Disallow ACCOUNTADMIN usage in SQL scripts
-```regex
-(?i)^(?!\s*--)\s*(USE\s+ROLE|SET\s+ROLE|GRANT\s+.*TO\s+ROLE|GRANT\s+ROLE)\s+.*\bACCOUNTADMIN\b
-```
-
-#### 18. Disallow plaintext passwords in DDL
-```regex
-(?i)^(?!\s*--)\s*.*PASSWORD\s*=\s*'[^']+'
-```
-
-### Data Quality & Consistency Rules
-
-#### 19. ~~Disallow SELECT * (force explicit column lists)~~ — DISABLED
-```regex
-(?i)^(?!\s*--)\s*SELECT\s+\*\s+FROM\b
-```
-> **Disabled**: Redundant — already covered by SQLFluff AM04 (`SELECT *` unknown columns) and SQLCC C002 (`SELECT *` used).
-
-#### 20. Disallow FLOAT/DOUBLE/REAL -- prefer NUMBER(p,s)
-```regex
-^(?!\s*--).*\b(FLOAT|DOUBLE|REAL)\b
-```
-
-#### 21. Disallow VARCHAR without explicit length
-```regex
-^(?!\s*--).*\bVARCHAR\s*[^(]
-```
-
-#### 22. CREATE TABLE must include COMMENT
-```regex
-(?i)^(?!\s*--)\s*CREATE\s+(OR\s+REPLACE\s+)?TABLE\s+(?!.*\bCOMMENT\b).*;\s*$
-```
-
-### Performance & Best Practice Rules
-
-#### 23. Disallow ORDER BY in view definitions
-```regex
-(?i)^(?!\s*--)\s*CREATE\s+(OR\s+REPLACE\s+)?VIEW\b[\s\S]*?\bORDER\s+BY\b
-```
-
-#### 24. Disallow COPY INTO without ON_ERROR clause
-```regex
-(?i)^(?!\s*--)\s*COPY\s+INTO\s+(?!.*\bON_ERROR\b).*;\s*$
-```
-
-#### 25. Dynamic Tables must specify TARGET_LAG
-```regex
-(?i)^(?!\s*--)\s*CREATE\s+(OR\s+REPLACE\s+)?DYNAMIC\s+TABLE\s+(?!.*\bTARGET_LAG\b)
-```
-
-### Naming Convention Rules (additional object types)
-
-#### 26. File Format names must follow `{DOM}{COMP}_{MAT}_FF_` pattern
-```regex
-(?i)^(?!\s*--)\s*CREATE\s+(OR\s+REPLACE\s+)?FILE\s+FORMAT\s+(?:[A-Z0-9_]+\.){0,2}(?![A-Z0-9]{3}[A-Z]_(RAW|CUR|AGG|GOL)_FF_)[A-Z_][A-Z0-9_]*
-```
-
-#### 27. Stored Procedure names must follow `{DOM}{COMP}_{MAT}_SP_` pattern
-```regex
-(?i)^(?!\s*--)\s*CREATE\s+(OR\s+REPLACE\s+)?PROCEDURE\s+(?:[A-Z0-9_]+\.){0,2}(?![A-Z0-9]{3}[A-Z]_(RAW|CUR|AGG|GOL)_SP_)[A-Z_][A-Z0-9_]*
-```
-
-#### 28. Task names must follow `{DOM}{COMP}_{MAT}_TK_` pattern
-```regex
-(?i)^(?!\s*--)\s*CREATE\s+(OR\s+REPLACE\s+)?TASK\s+(?:[A-Z0-9_]+\.){0,2}(?![A-Z0-9]{3}[A-Z]_(RAW|CUR|AGG|GOL)_TK_)[A-Z_][A-Z0-9_]*
-```
+82 rules across SonarQube (regex + AST) and SQLFluff, with no overlap. Summary in [RULES.md](RULES.md); regex patterns and examples in [docs/SQL-RULES.md](docs/SQL-RULES.md).
 
 ## Monitoring
 ### Issue overview
@@ -560,113 +405,11 @@ The history lives in UnitTH run stores, one JSON file per project in `./unitth-s
 
 ### Pipeline tracing (OpenTelemetry)
 
-Every `run:` step in `dataops-pipeline.yml` is wrapped in `otel_step` (`github-runner/lib.sh`): it logs a begin/end line with exit code and duration, and exports one span per step. All jobs of one run share a trace (trace id derived from `run_id` + attempt):
-
-```
-pipeline <repo>          overall result (finish job)
-├── job <name>           full job duration incl. checkout/connect, result, runner name
-│   ├── queue <name>     time waiting for a runner (GitHub API; not in local-ci)
-│   └── <step>           e.g. scan.sonar, deploy.dcm — exit code + duration
-```
-
-```bash
-./start.sh --with-observability      # adds Jaeger; UI on http://localhost:16686 (one service per project, e.g. project-one)
-```
-
-- One container (`jaegertracing/all-in-one`, Badger storage, 7-day retention) on its own `otelnet` network; SonarQube and Postgres are not reachable from it.
-- Fail-open: without `--with-observability` the runners have no OTLP endpoint and no spans are sent; a stopped Jaeger never fails a step.
-- Disable per consumer with the workflow input `OTEL_ENABLED: false`.
-- `local-ci/run.sh` sends traces to Jaeger automatically when it is running.
+Jaeger starts with the stack (UI http://localhost:16686, one service per project); `./start.sh --no-observability` turns it off. Span layout and details: [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md).
 
 ## SonarQube + SQLFluff — Integrated Scanning
 
-Both tools run in the CI/CD pipeline. SQLFluff issues are imported into SonarQube as external issues via `sonar.externalIssuesReportPaths`, giving **one dashboard for everything**.
-
-```
-Pipeline: ... → SQLFluff lint → sonar-scanner (imports sqlfluff_issues.json) → Quality Gate → ...
-```
-
-### Scanner Configuration
-
-The scanner uses `sonar.language=sql` to ensure the SQL Code Checker plugin claims `.sql` files. The text plugin (`txt:`) runs alongside via its own sensor. Only `.git/**` is excluded — all other files are indexed.
-
-### Rule Ownership (no duplicates)
-
-Each rule runs in **exactly one tool** to avoid double-counting:
-
-| Tool | Responsibility | Rules |
-|------|---------------|-------|
-| **SonarQube txt:** | Safety, security, naming, data types, deps, style | 40 rules |
-| **SonarQube SQLCC:** | Structural SQL (views, joins, nulls, ORDER BY) | 19 rules |
-| **SQLFluff** (external) | Formatting, AST-based style, implicit aliases | 23 rules |
-| **Total** | | **82 rules** |
-
-#### SonarQube Text Plugin (`txt:`) — 40 regex-based rules
-
-| Category | Rules | Examples |
-|----------|------:|---------|
-| Safety | 6 | CREATE without IF NOT EXISTS, DROP without IF EXISTS, USE statements, ALTER TABLE DROP COLUMN, TRUNCATE |
-| Security | 4 | GRANT PUBLIC, ACCOUNTADMIN, GRANT ALL, plaintext passwords |
-| Naming conventions | 15 | Table/View/DT/Stage/Schema/FF/SP/Task/Stream/Semantic View naming, maturity-level code enforcement |
-| Data types | 3 | TIMESTAMP_NTZ/LTZ, FLOAT/DOUBLE/REAL, VARCHAR without length |
-| Quality | 6 | SELECT *, TABLE COMMENT, DEFINE COMMENT, ORDER BY in views, COPY ON_ERROR, DT TARGET_LAG |
-| Dependencies | 2 | Cross-database, cross-schema |
-| Style | 4 | Keywords UPPER, implicit alias, JOIN without ON, ELSE NULL |
-
-**Regex fix applied**: Rules 7 (TIMESTAMP), 20 (FLOAT), 21 (VARCHAR) use `^(?!\s*--).*` lookahead instead of the broken `(?<!--.*)` lookbehind which silently failed in Java's regex engine.
-
-#### SonarQube SQL Code Checker (`SQLCC:`) — AST-based
-
-| Rule | Description |
-|------|-------------|
-| C002 | SELECT * used |
-| C003 | INSERT without column list |
-| C009 | Non-sargable statement |
-| C012 | NULL comparison with `=` |
-| C017 | ORDER BY without ASC/DESC |
-| C022 | Non-materialised view |
-| C023 | Cartesian join |
-
-#### SQLFluff (external issues in SonarQube) — 23 AST-based rules, excludes `sources/definitions/`
-
-| Rule | Description | Severity |
-|------|-------------|----------|
-| LT01 | Unnecessary whitespace | INFO |
-| LT02 | Indentation | INFO |
-| LT06 | Function name spacing | INFO |
-| LT08 | CTE bracket newline | INFO |
-| LT09 | Select targets formatting | INFO |
-| LT10 | SELECT modifiers placement | INFO |
-| LT12 | EOF newline | INFO |
-| LT14 | Inconsistent line endings | INFO |
-| CP02 | Identifier casing | MINOR |
-| CP04 | Boolean casing | MINOR |
-| AL01 | Missing AS keyword (implicit alias) | MINOR |
-| AL02 | Implicit column alias | MINOR |
-| AL08 | Column alias in GROUP BY | MINOR |
-| AM03 | Ambiguous ORDER BY | MINOR |
-| AM04 | SELECT * unknown columns | MINOR |
-| AM05 | JOIN without ON clause | MAJOR |
-| AM09 | LIMIT without ORDER BY | MINOR |
-| RF02 | Unnecessary qualified references | MINOR |
-| RF03 | Single CASE to IF | MINOR |
-| RF04 | Keywords as identifiers | MAJOR |
-| ST06 | Unnecessary ELSE NULL | MINOR |
-| ST07 | USING vs ON in joins | MINOR |
-| ST09 | Nested CASE | MINOR |
-
-#### Excluded from SQLFluff (handled by SonarQube or not applicable)
-- **PRS** — parse errors on DCM `DEFINE` syntax (SonarQube text plugin handles these files)
-- **CP01** — keywords UPPER (handled by `txt:Keywords_must_be_UPPER`)
-
-### DDL Post-Processing
-
-The `dependencies/ddl.sql` file is auto-generated by Snowflake's `GET_DDL()` which outputs lowercase keywords and tab indentation. The `ddl_uppercase_keywords.py` filter normalizes the output:
-- Uppercases all unquoted identifiers and SQL keywords
-- Converts tabs to 4-space indentation
-- Adds space before `(` in object definitions
-- Expands inline `SELECT ... FROM` onto multiple lines
-- Preserves string literals and comments
+SQLFluff issues are imported into SonarQube as external issues, so there is one dashboard. Scanner config, rule ownership and DDL post-processing: [docs/SQL-RULES.md](docs/SQL-RULES.md).
 
 ## Quick Setup Guide
 
@@ -767,7 +510,7 @@ gh secret set SNOW_CONFIG_B64 --org zbrainiac-labs --visibility all
 | `sonar-init` | One-shot: shared Sonar token + custom rules, then exits | - |
 | `runner` (x2) | Ephemeral org-level self-hosted GitHub runners | - |
 | `nginx-server` | Serves UnitTestHistory HTML reports | 8080 |
-| `jaeger` | Pipeline traces, profile `observability` | 16686 |
+| `jaeger` | Pipeline traces (Jaeger v2), on by default; `./start.sh --no-observability` skips it | 16686 |
 | `local-ci` | Local workflow simulation with act, profile `local-ci` | - |
 
 ---
@@ -776,16 +519,17 @@ gh secret set SNOW_CONFIG_B64 --org zbrainiac-labs --visibility all
 
 | Component | Minimum | Tested | Notes |
 |-----------|---------|--------|-------|
-| Snowflake CLI | 3.16.0 | 3.18.0 | OIDC requires >= 3.11 |
-| SonarQube | 10.0+ | 26.x (Community Build) | Scanner 8.x requires 10+ |
-| Sonar Scanner CLI | 8.0.0 | 8.1.0.6389 | Use 5.x for SonarQube 9.x |
-| SQLFluff | 3.0+ | latest | Snowflake dialect |
-| GitHub Actions Runner | 2.320+ | 2.330.0 | Self-hosted, Linux x64/arm64 |
+| Snowflake CLI | 3.16.0 | 3.32.1 | OIDC requires >= 3.11 |
+| SonarQube | 10.0+ | 26.10 (Community Build) | Scanner 8.x requires 10+ |
+| Sonar Scanner CLI | 8.0.0 | 8.3.1.16491 | Use 5.x for SonarQube 9.x |
+| SQLFluff | 3.0+ | 4.5 | Snowflake dialect |
+| GitHub Actions Runner | 2.327+ | 2.338.2 | Self-hosted, Linux x64/arm64; Node 24 actions |
 | Docker Compose | v2+ | v2.x | No `version:` key needed |
-| PostgreSQL | 15+ | 17.5 | SonarQube backend |
-| Python | 3.10+ | 3.10 | Runner image (jammy) |
-| yq | 4.x | latest | YAML manipulation |
-| Java | 21 | eclipse-temurin:21-jre | Scanner + UnitTestHistory |
+| PostgreSQL | 15+ | 17.11 | SonarQube backend |
+| Python | 3.10+ | 3.14 | Runner image (Ubuntu 26.04, venv in /opt/venv) |
+| yq | 4.x | 4.54.1 | Built from source in the image |
+| Java | 21 | eclipse-temurin:21.0.13_9-jre-resolute | Scanner + UnitTestHistory |
+| Jaeger | 2.x | 2.22.0 | OTLP gRPC, Badger storage |
 
 ---
 

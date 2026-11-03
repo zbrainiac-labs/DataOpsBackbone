@@ -16,6 +16,9 @@
 # Skips gracefully if the SQL file does not exist (exit 0).
 # -----------------------------------------------------------------------------
 set -Eeuo pipefail
+LIB="$(dirname "${BASH_SOURCE[0]}")/lib.sh"; [[ -f "$LIB" ]] || LIB=/usr/local/bin/lib.sh
+# shellcheck source=/dev/null
+source "$LIB"
 
 for ARG in "$@"; do
   case $ARG in
@@ -35,12 +38,12 @@ RENDER_ONLY="${RENDER_ONLY:-}"
 CONNECTION_NAME="${CONNECTION_NAME:-}"
 
 if [[ ! -f "$SQL_FILE" ]]; then
-  echo "⏭️  $SQL_FILE not found, skipping."
+  log_info "⏭️  $SQL_FILE not found, skipping."
   exit 0
 fi
 
 if [[ ! -f "$MANIFEST" ]]; then
-  echo "❌ Manifest not found: $MANIFEST"
+  log_error "Manifest not found: $MANIFEST"
   exit 1
 fi
 
@@ -77,9 +80,9 @@ for k, v in merged.items():
     print(f'{k}={v}')
 ")
 
-echo "Running $SQL_FILE (target=$TARGET, connection=$CONNECTION_NAME)"
-echo "Variables: ${D_ARGS[*]}"
+log_info "Running $SQL_FILE (target=$TARGET, connection=$CONNECTION_NAME)"
+log_info "Variables: ${D_ARGS[*]}"
 
 snow sql -f "$SQL_FILE" -c "$CONNECTION_NAME" --enable-templating JINJA "${D_ARGS[@]}"
 
-echo "✅ $SQL_FILE completed."
+log_info "✅ $SQL_FILE completed."

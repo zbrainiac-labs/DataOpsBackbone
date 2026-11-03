@@ -1,5 +1,5 @@
-# docker build -t local-github-runner
-FROM sonarqube:community
+# docker build -t brainiac/sonarqube ./sonarqube
+FROM sonarqube:26.10.0.133078-community
 
 USER root
 

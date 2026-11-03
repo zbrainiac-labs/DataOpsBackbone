@@ -1,8 +1,37 @@
 #!/bin/bash
 # -----------------------------------------------------------------------------
 # Shared helpers for pipeline steps. Loaded automatically in every workflow
-# step via BASH_ENV=/usr/local/bin/lib.sh (or: source /usr/local/bin/lib.sh).
+# step via BASH_ENV=/usr/local/bin/lib.sh; scripts source it themselves:
+#   source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 # -----------------------------------------------------------------------------
+
+# --- Logging (stderr, so stdout stays clean for data) -------------------------
+# Format: 2026-11-02T21:30:00Z INFO  [script] message
+# WARN/ERROR also emit a GitHub annotation when running under Actions.
+# LOG_TAG overrides the [script] tag (default: name of the calling script).
+_log() {
+  local level=$1; shift
+  local tag=${LOG_TAG:-} src
+  if [[ -z "$tag" ]]; then  # first caller outside lib.sh; inline workflow steps -> job name
+    for src in "${BASH_SOURCE[@]:1}"; do
+      [[ "$src" == */lib.sh || "$src" == lib.sh || "$src" == */workflow/*.sh ]] || { tag=$(basename "$src" .sh); break; }
+    done
+    tag=${tag:-${GITHUB_JOB:-$(basename "$0" .sh)}}
+  fi
+  printf '%s %-5s [%s] %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$level" "$tag" "$*" >&2
+  if [[ -n "${GITHUB_ACTIONS:-}" ]]; then
+    case "$level" in
+      WARN) echo "::warning title=${tag}::$*" >&2 ;;
+      ERROR) echo "::error title=${tag}::$*" >&2 ;;
+    esac
+  fi
+  return 0
+}
+log_info() { _log INFO "$@"; }
+log_warn() { _log WARN "$@"; }
+log_error() { _log ERROR "$@"; }
+# die MSG [EXIT_CODE]  -- log an error and exit (default 1)
+die() { log_error "$1"; exit "${2:-1}"; }
 
 # retry [-n attempts] cmd...  -- linear backoff (10s, 20s, ...)
 retry() {
@@ -11,10 +40,10 @@ retry() {
   until "$@"; do
     n=$((n + 1))
     if (( n >= attempts )); then
-      echo "::error::Failed after ${attempts} attempts: $*"
+      log_error "Failed after ${attempts} attempts: $*"
       return 1
     fi
-    echo "::warning::Attempt ${n} failed, retrying in $((n * 10))s..."
+    log_warn "Attempt ${n} failed, retrying in $((n * 10))s..."
     sleep $((n * 10))
   done
 }

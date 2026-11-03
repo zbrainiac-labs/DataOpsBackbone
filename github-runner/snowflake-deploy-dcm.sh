@@ -14,6 +14,9 @@
 # -----------------------------------------------------------------------------
 
 set -Eeuo pipefail
+LIB="$(dirname "${BASH_SOURCE[0]}")/lib.sh"; [[ -f "$LIB" ]] || LIB=/usr/local/bin/lib.sh
+# shellcheck source=/dev/null
+source "$LIB"
 
 for ARG in "$@"; do
   case $ARG in
@@ -28,15 +31,15 @@ for ARG in "$@"; do
     --PROJECT_DIR=*)
       PROJECT_DIR="${ARG#*=}" ;;
     *)
-      echo "Unknown argument: $ARG"
+      log_error "Unknown argument: $ARG"
       exit 1
       ;;
   esac
 done
 
 if [[ -z "$PROJECT_IDENTIFIER" || -z "$CONNECTION_NAME" ]]; then
-  echo "Missing required arguments."
-  echo "Required: --PROJECT_IDENTIFIER --CONNECTION_NAME [--TARGET] [--ALIAS] [--PROJECT_DIR]"
+  log_error "Missing required arguments."
+  log_info "Required: --PROJECT_IDENTIFIER --CONNECTION_NAME [--TARGET] [--ALIAS] [--PROJECT_DIR]"
   exit 1
 fi
 
@@ -47,33 +50,29 @@ if [[ -n "$PROJECT_DIR" ]]; then
   cd "$PROJECT_DIR"
 fi
 
-echo "DCM Deployment"
-echo "=================================================="
-echo "  Project:    $PROJECT_IDENTIFIER"
-echo "  Connection: $CONNECTION_NAME"
-echo "  Target:     $TARGET"
-echo "  Alias:      $ALIAS"
-echo "  Directory:  $(pwd)"
-echo "=================================================="
+log_info "DCM Deployment"
+log_info "=================================================="
+log_info "  Project:    $PROJECT_IDENTIFIER"
+log_info "  Connection: $CONNECTION_NAME"
+log_info "  Target:     $TARGET"
+log_info "  Alias:      $ALIAS"
+log_info "  Directory:  $(pwd)"
+log_info "=================================================="
 
-echo ""
 if [[ -f "pre_deploy.sql" ]]; then
-  echo "Step 0: Skipping pre_deploy.sql (already executed by pipeline)"
-  echo ""
+  log_info "Step 0: Skipping pre_deploy.sql (already executed by pipeline)"
 fi
 
-echo "Step 1: Running DCM analyze..."
+log_info "Step 1: Running DCM analyze..."
 snow dcm raw-analyze "$PROJECT_IDENTIFIER" -c "$CONNECTION_NAME" --target "$TARGET"
-echo "Analyze completed."
+log_info "Analyze completed."
 
-echo ""
-echo "Step 2: Running DCM plan..."
+log_info "Step 2: Running DCM plan..."
 snow dcm plan "$PROJECT_IDENTIFIER" -c "$CONNECTION_NAME" --target "$TARGET" --save-output
-echo "Plan completed."
+log_info "Plan completed."
 
 if [[ -f "out/plan/plan_result.json" ]]; then
-  echo ""
-  echo "Plan summary:"
+  log_info "Plan summary:"
   python3 -c "
 import json, sys
 data = json.load(open('out/plan/plan_result.json'))
@@ -92,19 +91,16 @@ if drops:
 if status == 'PLAN_FAILED':
     print('  Plan FAILED. Check errors above.')
     sys.exit(1)
-" || echo "  Could not parse plan output."
+" || log_warn "Could not parse plan output."
 fi
 
-echo ""
-echo "Step 3: Running DCM deploy..."
+log_info "Step 3: Running DCM deploy..."
 snow dcm deploy "$PROJECT_IDENTIFIER" -c "$CONNECTION_NAME" --target "$TARGET" --alias "$ALIAS"
-echo "Deploy completed."
+log_info "Deploy completed."
 
 if [[ -f "post_deploy.sql" ]]; then
-  echo ""
-  echo "Step 4: Skipping post_deploy.sql (executed by pipeline after DCM deploy)"
+  log_info "Step 4: Skipping post_deploy.sql (executed by pipeline after DCM deploy)"
 fi
 
-echo ""
-echo "DCM Deployment finished successfully."
-echo "=================================================="
+log_info "DCM Deployment finished successfully."
+log_info "=================================================="

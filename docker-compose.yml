@@ -24,7 +24,7 @@ services:
       - sonarnet
 
   db:
-    image: postgres:17.5
+    image: postgres:17.11
     container_name: sonarqube_db
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
@@ -86,8 +86,8 @@ services:
       SONAR_HOST: http://sonarqube:9000
       CONNECTION_NAME: ${CONNECTION_NAME}
       SNOW_CONFIG_B64: ${SNOW_CONFIG_B64:-}
-      # Set by `./start.sh --with-observability`; empty = tracing off
-      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      # Tracing is on by default; `./start.sh --no-observability` sets this empty
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT-jaeger:4317}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - sonar_env:/sonar:ro
@@ -98,31 +98,26 @@ services:
       - sonarnet
       - otelnet
 
-  # Pipeline tracing (OpenTelemetry). Not started by default:
-  #   ./start.sh --with-observability   -> UI http://localhost:16686
+  # Pipeline tracing (OpenTelemetry), started by default -> UI http://localhost:16686
+  # Opt out: ./start.sh --no-observability
   jaeger:
-    profiles: ["observability"]
-    image: jaegertracing/all-in-one:1.62.0
+    image: jaegertracing/jaeger:2.22.0
     container_name: telemetry
     restart: unless-stopped
-    environment:
-      SPAN_STORAGE_TYPE: badger
-      BADGER_EPHEMERAL: "false"
-      BADGER_DIRECTORY_VALUE: /badger/data
-      BADGER_DIRECTORY_KEY: /badger/key
-      BADGER_SPAN_STORE_TTL: 168h
-    user: "0"
+    command: ["--config", "/etc/jaeger/config.yaml"]
+    user: "0"  # badger needs write access to the named volume (root-owned)
     ports:
       - "16686:16686"
       # OTLP for local-ci (act job containers can only join sonarnet); localhost only
       - "127.0.0.1:4317:4317"
     volumes:
-      - jaeger_data:/badger
+      - ./jaeger/config.yaml:/etc/jaeger/config.yaml:ro
+      - jaeger_v2_data:/badger
     networks:
       - otelnet
 
   nginx-server:
-    image: nginx
+    image: nginx:1.31.8-alpine
     container_name: test-unit-reports
     ports:
       - "8080:80"
@@ -163,7 +158,7 @@ volumes:
   sonarqube_extensions:
   postgresql:
   sonar_env:
-  jaeger_data:
+  jaeger_v2_data:
 
   sql_unit_report:
     name: sql_unit_report

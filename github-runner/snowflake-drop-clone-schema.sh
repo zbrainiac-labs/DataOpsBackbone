@@ -12,6 +12,9 @@
 # Drops: DATAOPS.IOT_RAW_V001_42
 # -----------------------------------------------------------------------------
 set +e
+LIB="$(dirname "${BASH_SOURCE[0]}")/lib.sh"; [[ -f "$LIB" ]] || LIB=/usr/local/bin/lib.sh
+# shellcheck source=/dev/null
+source "$LIB"
 set -u
 
 for ARG in "$@"; do
@@ -25,19 +28,19 @@ for ARG in "$@"; do
 done
 
 if [[ -z "${SOURCE_DATABASE:-}" || -z "${SOURCE_SCHEMA:-}" || -z "${RELEASE_NUM:-}" || -z "${CONNECTION_NAME:-}" ]]; then
-  echo "Missing required arguments."
-  echo "Required: --SOURCE_DATABASE --SOURCE_SCHEMA --RELEASE_NUM --CONNECTION_NAME"
+  log_error "Missing required arguments."
+  log_info "Required: --SOURCE_DATABASE --SOURCE_SCHEMA --RELEASE_NUM --CONNECTION_NAME"
   exit 1
 fi
 
 CLONE_SCHEMA="${SOURCE_SCHEMA}_${RELEASE_NUM}"
 
-echo "Dropping clone: ${SOURCE_DATABASE}.${CLONE_SCHEMA}"
+log_info "Dropping clone: ${SOURCE_DATABASE}.${CLONE_SCHEMA}"
 
 if snow sql -c "$CONNECTION_NAME" -q "
 DROP SCHEMA IF EXISTS ${SOURCE_DATABASE}.${CLONE_SCHEMA};
 "; then
-  echo "Dropped: ${SOURCE_DATABASE}.${CLONE_SCHEMA}"
+  log_info "Dropped: ${SOURCE_DATABASE}.${CLONE_SCHEMA}"
 else
-  echo "Drop failed (non-critical)"
+  log_warn "Drop failed (non-critical)"
 fi

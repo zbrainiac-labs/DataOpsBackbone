@@ -1,5 +1,18 @@
 #!/bin/bash
+# Build the images locally and start the stack.
+# Usage: ./start.sh [--no-observability]
+#   --no-observability   do not start Jaeger; runners send no traces
 set -Eeuo pipefail
+
+OBSERVABILITY=true
+for arg in "$@"; do
+  case "$arg" in
+    --no-observability) OBSERVABILITY=false ;;
+    --with-observability) ;;  # old flag; tracing is now on by default
+    -h|--help) sed -n '2,4p' "$0"; exit 0 ;;
+    *) echo "Unknown option: $arg"; exit 1 ;;
+  esac
+done
 
 # Step 0: Clean up (optional)
 # docker compose down -v --remove-orphans
@@ -43,12 +56,8 @@ EOF
   SNOW_CONFIG_B64=$(echo "$SNOW_CONFIG" | base64 | tr -d '\n')
   export SNOW_CONFIG_B64
   echo "SNOW_CONFIG_B64 generated for connection: $CONNECTION_NAME"
-elif [[ -f SNOW_CONFIG_B64 ]]; then
-  echo "Using existing SNOW_CONFIG_B64 file..."
-  SNOW_CONFIG_B64=$(cat SNOW_CONFIG_B64)
-  export SNOW_CONFIG_B64
 else
-  echo "WARNING: No Snowflake credentials found. Set SNOW_ACCOUNT/SNOW_USER/SNOW_PAT in .env or provide SNOW_CONFIG_B64 file."
+  echo "WARNING: No Snowflake credentials found. Set SNOW_ACCOUNT/SNOW_USER/SNOW_PAT in .env."
 fi
 
 echo "Building GitHub runner image for $PLATFORM..."
@@ -69,12 +78,15 @@ docker build \
 echo "Starting all services with docker compose (detached)..."
 # Detached: the script exits once services are up/healthy instead of staying
 # attached to the containers (previously one ./start.sh process per deploy).
-PROFILES=()
-if [[ "${1:-}" == "--with-observability" ]]; then
-  PROFILES=(--profile observability)
-  export OTEL_EXPORTER_OTLP_ENDPOINT="jaeger:4317"
+UP_ARGS=()
+if [[ "$OBSERVABILITY" == true ]]; then
   echo "Observability enabled: Jaeger UI on http://localhost:16686"
+else
+  export OTEL_EXPORTER_OTLP_ENDPOINT=""
+  UP_ARGS=(--scale jaeger=0)
+  docker compose --env-file .env rm -sf jaeger >/dev/null 2>&1 || true
+  echo "Observability disabled"
 fi
-docker compose --env-file .env ${PROFILES[@]+"${PROFILES[@]}"} up -d --wait --remove-orphans
-docker compose --env-file .env ${PROFILES[@]+"${PROFILES[@]}"} ps
+docker compose --env-file .env up -d --wait --remove-orphans ${UP_ARGS[@]+"${UP_ARGS[@]}"}
+docker compose --env-file .env ps
 echo "Logs: docker compose logs -f [service]"

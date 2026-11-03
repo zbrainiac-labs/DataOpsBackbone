@@ -1,18 +1,34 @@
 name: CI
+
+# Verify every change; publish the Docker images only from main or a v* tag,
+# and only after lint, tests, Trivy and the SonarQube quality gate have passed.
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
     branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  RUNNER_IMAGE: brainiac/local-github-runner
+  SONAR_IMAGE: brainiac/sonarqube
 
 jobs:
-  lint-and-test:
+  lint-test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
-          python-version: '3.12'
+          python-version: '3.14'  # same as the runner image (Ubuntu 26.04)
       - name: Install dependencies
         run: pip install ruff mypy pytest sqlfluff pyyaml regex types-regex
       - name: Ruff lint
@@ -24,30 +40,131 @@ jobs:
       - name: Pytest
         run: pytest tests/ -v
 
-  shellcheck:
+  shell-and-workflows:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - name: ShellCheck
-        run: shellcheck github-runner/*.sh start.sh
+        run: shellcheck github-runner/*.sh start.sh local-ci/*.sh
+      - name: actionlint
+        run: |
+          bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash) 1.7.12
+          ./actionlint -color
 
-  container-scan:
+  # Build both images, scan them, and run the repo's own SonarQube stack
+  # against this checkout (same script and quality gate as local runs).
+  images:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069  # v4.4.1
       - name: Build runner image
-        run: docker build -t dataops-runner:ci ./github-runner
-      - name: Trivy scan runner
-        uses: aquasecurity/trivy-action@v0.36.0
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
         with:
-          image-ref: dataops-runner:ci
+          context: ./github-runner
+          load: true
+          tags: ${{ env.RUNNER_IMAGE }}:latest
+          cache-from: type=gha,scope=runner
+          cache-to: type=gha,scope=runner,mode=max
+      - name: Build SonarQube image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
+        with:
+          context: ./sonarqube
+          load: true
+          tags: ${{ env.SONAR_IMAGE }}:latest
+          cache-from: type=gha,scope=sonarqube
+          cache-to: type=gha,scope=sonarqube,mode=max
+      - name: Trivy scan runner (blocking)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
+        with:
+          image-ref: ${{ env.RUNNER_IMAGE }}:latest
           severity: CRITICAL,HIGH
           exit-code: 1
-      - name: Build sonarqube image
-        run: docker build -t dataops-sonarqube:ci ./sonarqube
-      - name: Trivy scan sonarqube
-        uses: aquasecurity/trivy-action@v0.36.0
+      # Remaining findings are in jars shipped by SonarSource (Elasticsearch,
+      # scanner) and the third-party plugins; report them, don't block on them.
+      - name: Trivy scan SonarQube (report only)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
         with:
-          image-ref: dataops-sonarqube:ci
+          image-ref: ${{ env.SONAR_IMAGE }}:latest
           severity: CRITICAL,HIGH
-          exit-code: 1
+          exit-code: 0
+      - name: Start SonarQube stack
+        run: |
+          sudo sysctl -w vm.max_map_count=524288  # Elasticsearch inside SonarQube
+          pw() { openssl rand -hex 12; }
+          cat > .env <<EOF
+          POSTGRES_USER=sonar
+          POSTGRES_PASSWORD=$(pw)
+          POSTGRES_DB=sonar
+          SONAR_JDBC_USERNAME=sonar
+          SONAR_ADMIN_PASS=Ci-$(pw)-Aa1!
+          EOF
+          echo "SONAR_JDBC_PASSWORD=$(grep '^POSTGRES_PASSWORD=' .env | cut -d= -f2)" >> .env
+          docker compose --env-file .env up -d --wait sonarqube db sonar-init
+      - name: SonarQube quality gate
+        run: bash local-ci/sonar-self-scan.sh
+      - name: SonarQube logs
+        if: failure()
+        run: docker compose --env-file .env logs --no-color sonarqube sonar-init | tail -n 200
+
+  changes:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    outputs:
+      images: ${{ steps.filter.outputs.images }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d  # v4.0.3
+        id: filter
+        with:
+          filters: |
+            images:
+              - 'github-runner/**'
+              - 'sonarqube/**'
+              - '.github/workflows/ci.yml'
+
+  publish:
+    needs: [lint-test, shell-and-workflows, images, changes]
+    if: >-
+      github.event_name != 'pull_request' &&
+      (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' ||
+       needs.changes.outputs.images == 'true')
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - image: brainiac/local-github-runner
+            context: ./github-runner
+            scope: runner
+          - image: brainiac/sonarqube
+            context: ./sonarqube
+            scope: sonarqube
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069  # v4.4.1
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6  # v4.7.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302  # v6.2.0
+        with:
+          images: ${{ matrix.image }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,prefix=sha-
+            type=semver,pattern={{version}}
+      - name: Build and push (multi-arch)
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc  # v7.4.0
+        with:
+          context: ${{ matrix.context }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: |
+            type=gha,scope=${{ matrix.scope }}-multi
+            type=gha,scope=${{ matrix.scope }}
+          cache-to: type=gha,scope=${{ matrix.scope }}-multi,mode=max
+          provenance: true
+          sbom: true
