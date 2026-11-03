@@ -16,7 +16,8 @@ pipeline <repo>          overall result (finish job)
 ./start.sh --no-observability        # without Jaeger; runners get no OTLP endpoint
 ```
 
-- One container (`jaegertracing/jaeger` v2, config in `jaeger/config.yaml`, Badger storage, 7-day retention) on its own `otelnet` network; SonarQube and Postgres are not reachable from it.
+- One container (`jaegertracing/jaeger` v2, config in `jaeger/config.yaml`, Badger storage, 365-day retention) on its own `otelnet` network; SonarQube and Postgres are not reachable from it.
+- Traces are kept in the `jaeger_v2_data` volume. To free disk or start fresh: `docker compose rm -sf jaeger && docker volume rm dataopsbackbone_jaeger_v2_data`, then `./start.sh`. Shorter retention: change `ttl.spans` in `jaeger/config.yaml`.
 - Fail-open: with `--no-observability` the runners have no OTLP endpoint and no spans are sent; a stopped Jaeger never fails a step.
 - Disable per consumer with the workflow input `OTEL_ENABLED: false`.
 - `local-ci/run.sh` sends traces to Jaeger automatically when it is running.

@@ -34,7 +34,8 @@ if [[ -z "${CONNECTION_NAME:-}" || "$CONNECTION_NAME" == "default_value_here" ]]
   fi
 fi
 
-PAT_TOKEN=$(grep -A10 "\[connections\.$CONNECTION_NAME\]" "$SNOW_DIR/config.toml" | grep 'token' | head -1 | sed 's/.*= *"\(.*\)"/\1/')
+# Match the `token = "..."` key only (the authenticator line also contains "token").
+PAT_TOKEN=$(grep -A10 "\[connections\.$CONNECTION_NAME\]" "$SNOW_DIR/config.toml" | grep -E '^token[[:space:]]*=' | head -1 | sed 's/.*= *"\(.*\)"/\1/')
 if [[ -n "$PAT_TOKEN" ]]; then
   PAYLOAD=$(echo "$PAT_TOKEN" | cut -d'.' -f2)
   PADDED=$(echo "$PAYLOAD" | awk '{while(length%4)$0=$0"=";print}')

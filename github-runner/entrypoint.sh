@@ -35,7 +35,6 @@ cd /home/docker/actions-runner
 
 [[ -d /home/docker/sql-report-vol ]] && { sudo chown -R docker:docker /home/docker/sql-report-vol || true; }
 [[ -f /sonar/.sonar_env ]] && ln -sf /sonar/.sonar_env "$HOME/.sonar_env"
-[[ -n "${SNOW_CONFIG_B64:-}" ]] && bash /usr/local/bin/snowflake-config-setup.sh
 
 gh_token() {  # $1 = registration-token | remove-token
   curl -sf -X POST -H "Authorization: token ${GH_TOKEN}" -H "Accept: application/vnd.github+json" \

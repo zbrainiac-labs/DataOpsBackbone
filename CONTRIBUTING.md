@@ -73,6 +73,16 @@ local-ci/run.sh --project=../project-one --full
 5. If modifying Python, ensure type hints are present and `ruff` + `mypy` pass
 6. Submit a PR -- `ci.yml` runs lint, tests, Trivy and the SonarQube gate. Docker images are published only from `main` or a `v*` tag, after all checks pass.
 
+## Updating pinned tool versions
+
+Dependabot updates GitHub Actions, the `FROM` images and the images in `docker-compose.yml`. The tool `ARG`s at the top of `github-runner/Dockerfile` (yq, otel-cli, actions runner, sonar-scanner, act, docker CLI) are updated by hand:
+
+1. Bump the versions (source links are in the Dockerfile comment).
+2. Rebuild and scan: `docker build -t brainiac/local-github-runner github-runner` and
+   `docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy image --severity CRITICAL,HIGH brainiac/local-github-runner`
+   (must report 0, CI blocks otherwise).
+3. Run `bash local-ci/sonar-self-scan.sh` and `local-ci/run.sh --dry-run`.
+
 ## Rule Development
 
 SQL linting rules live in two places with **no overlap**:

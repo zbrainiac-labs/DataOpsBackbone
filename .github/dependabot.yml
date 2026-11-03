@@ -19,7 +19,17 @@ updates:
     directory: "/sonarqube"
     schedule:
       interval: "monthly"
-  - package-ecosystem: "pip"
+  # postgres, jaeger, nginx in docker-compose.yml (brainiac/* are built here)
+  - package-ecosystem: "docker-compose"
     directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "monthly"
+    groups:
+      compose:
+        patterns: ["*"]
+    ignore:
+      # A Postgres major upgrade needs a data migration (pg_upgrade/dump)
+      - dependency-name: "postgres"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "brainiac/*"
+# Not covered by any bot: tool ARGs in github-runner/Dockerfile (see comment there).

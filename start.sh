@@ -36,29 +36,11 @@ case "$ARCH" in
     ;;
 esac
 
-# shellcheck source=/dev/null
-source .env
-
-if [[ -n "$SNOW_ACCOUNT" && -n "$SNOW_USER" && -n "$SNOW_PAT" ]]; then
-  echo "Generating SNOW_CONFIG_B64 from .env variables..."
-  SNOW_CONFIG=$(cat <<EOF
-[connections.${CONNECTION_NAME}]
-account = "${SNOW_ACCOUNT}"
-user = "${SNOW_USER}"
-role = "${SNOW_ROLE:-CICD}"
-database = "${SNOW_DATABASE:-DATAOPS}"
-schema = "${SNOW_SCHEMA:-IOT_RAW_V001}"
-warehouse = "${SNOW_WAREHOUSE:-MD_TEST_WH}"
-authenticator = "programmatic_access_token"
-token = "${SNOW_PAT}"
-EOF
-)
-  SNOW_CONFIG_B64=$(echo "$SNOW_CONFIG" | base64 | tr -d '\n')
-  export SNOW_CONFIG_B64
-  echo "SNOW_CONFIG_B64 generated for connection: $CONNECTION_NAME"
-else
-  echo "WARNING: No Snowflake credentials found. Set SNOW_ACCOUNT/SNOW_USER/SNOW_PAT in .env."
-fi
+# .env feeds docker compose (GitHub org/token, Postgres, SonarQube). Snowflake
+# credentials are not passed to the runners: every pipeline job configures its
+# own connection (OIDC, or the SNOW_CONFIG_B64 GitHub secret, see
+# local-ci/snow-config.sh).
+[[ -f .env ]] || { echo "Missing .env (see README: Configure .env)"; exit 1; }
 
 echo "Building GitHub runner image for $PLATFORM..."
 docker build \

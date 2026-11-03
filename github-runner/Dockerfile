@@ -1,3 +1,12 @@
+# Version pins not tracked by Dependabot (it only updates FROM lines). Update
+# them together and re-run Trivy (see CONTRIBUTING):
+#   YQ_VERSION        https://github.com/mikefarah/yq/releases
+#   OTEL_CLI_VERSION  https://github.com/equinix-labs/otel-cli/releases
+#   RUNNER_VERSION    https://github.com/actions/runner/releases
+#   sonar-scanner-cli https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/
+#   ACT_VERSION       https://github.com/nektos/act/releases
+#   DOCKER_CLI_VERSION https://download.docker.com/linux/static/stable/
+
 # Build Go tools from source with a current toolchain: the released binaries
 # are compiled with old Go/x/net versions that Trivy flags. Runs on the build
 # host's platform and cross-compiles for the target (no emulation).
