@@ -22,9 +22,12 @@ retry() {
 # --- OpenTelemetry (fail-open: never changes a step's result) -----------------
 # Env: OTEL_ENABLED=true, OTEL_EXPORTER_OTLP_ENDPOINT=host:4317 (e.g. jaeger:4317).
 #
+# Service name = consumer repo (one Jaeger service per project); the backbone
+# workflow is recorded as cicd.pipeline.name.
+#
 # Span tree per run (ids are derived from run_id + attempt, so every job on any
 # runner computes the same ids without passing state around):
-#   pipeline <repo>                      (finish job)
+#   pipeline                             (finish job)
 #   ├── job <name>                       (otel_job_begin / otel_job_end)
 #   │   ├── queue <name>                 (finish job, GitHub API; not under act)
 #   │   └── <step>                       (otel_step)
@@ -53,13 +56,13 @@ otel_span() {
   _otel_on || return 0
   local name=$1 start=$2 end=$3 status=$4 span_id=$5 parent_id=$6
   shift 6
-  local attrs="cicd.pipeline.run.id=${GITHUB_RUN_ID:-local},cicd.pipeline.name=${GITHUB_WORKFLOW:-local}"
+  local attrs="cicd.pipeline.run.id=${GITHUB_RUN_ID:-local},cicd.pipeline.name=${GITHUB_WORKFLOW:-local},cicd.pipeline.backbone=dataops-pipeline"
   attrs+=",vcs.repository=${GITHUB_REPOSITORY:-local},vcs.ref=${GITHUB_REF_NAME:-local},cicd.job=${GITHUB_JOB:-local}"
   attrs+=",cicd.worker.name=${RUNNER_NAME:-$(hostname)}"
   attrs+=",sf.database=${SOURCE_DATABASE:-},sf.schema=${SOURCE_SCHEMA:-},dcm.target=${DCM_TARGET:-}"
   local kv
   for kv in "$@"; do attrs+=",${kv}"; done
-  local -a args=(span --service "${OTEL_SERVICE_NAME:-dataops-pipeline}" --name "$name"
+  local -a args=(span --service "${OTEL_SERVICE_NAME:-${PROJECT_KEY:-dataops-pipeline}}" --name "$name"
     --start "$(_otel_ts "$start")" --end "$(_otel_ts "$end")" --attrs "$attrs"
     --timeout 2s --protocol grpc --insecure true --force-trace-id "$(_otel_trace_id)")
   [[ -n "$span_id" ]] && args+=(--force-span-id "$span_id")
@@ -104,7 +107,7 @@ otel_job_end() {
 otel_pipeline_end() {
   local start=$1 status=$2
   shift 2
-  otel_span "pipeline ${PROJECT_KEY:-local}" "$start" "$(date +%s%N)" "$status" "$(_otel_root_id)" "" "$@"
+  otel_span "pipeline" "$start" "$(date +%s%N)" "$status" "$(_otel_root_id)" "" "$@"
 }
 
 # Queue time per job from the GitHub API (finish job). Needs GH_TOKEN with actions:read.
