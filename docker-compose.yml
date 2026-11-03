@@ -85,7 +85,6 @@ services:
       RUNNER_LABELS: runner-org-${GITHUB_ORG}
       SONAR_HOST: http://sonarqube:9000
       CONNECTION_NAME: ${CONNECTION_NAME}
-      SNOW_CONFIG_B64: ${SNOW_CONFIG_B64:-}
       # Tracing is on by default; `./start.sh --no-observability` sets this empty
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT-jaeger:4317}
     volumes:

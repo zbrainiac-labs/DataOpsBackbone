@@ -94,18 +94,10 @@ JSON
 
 # --- 3. Secrets (never echoed; files are removed on exit)
 SNOW_CONFIG_B64="${SNOW_CONFIG_B64:-}"
-if [[ -z "$SNOW_CONFIG_B64" && -f "$BACKBONE/.env" ]]; then
-  SNOW_CONFIG_B64=$(
-    set -a
-    # shellcheck source=/dev/null
-    source "$BACKBONE/.env"
-    [[ -n "${SNOW_ACCOUNT:-}" && -n "${SNOW_USER:-}" && -n "${SNOW_PAT:-}" ]] || exit 0
-    printf '[connections.%s]\naccount = "%s"\nuser = "%s"\nrole = "%s"\ndatabase = "%s"\nschema = "%s"\nwarehouse = "%s"\nauthenticator = "programmatic_access_token"\ntoken = "%s"\n' \
-      "${CONNECTION_NAME:-default}" "$SNOW_ACCOUNT" "$SNOW_USER" "${SNOW_ROLE:-CICD}" "${SNOW_DATABASE:-DATAOPS}" \
-      "${SNOW_SCHEMA:-IOT_RAW_V001}" "${SNOW_WAREHOUSE:-MD_TEST_WH}" "$SNOW_PAT" | base64 | tr -d '\n'
-  )
+if [[ -z "$SNOW_CONFIG_B64" ]]; then
+  SNOW_CONFIG_B64=$(bash "$BACKBONE/local-ci/snow-config.sh") \
+    || { echo "ERROR: no Snowflake credentials (SNOW_CONFIG_B64 or SNOW_* in .env)"; exit 1; }
 fi
-[[ -n "$SNOW_CONFIG_B64" ]] || { echo "ERROR: no Snowflake credentials (SNOW_CONFIG_B64 or SNOW_* in .env)"; exit 1; }
 
 {
   echo "SNOW_CONFIG_B64=$SNOW_CONFIG_B64"

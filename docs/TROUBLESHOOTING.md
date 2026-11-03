@@ -6,7 +6,7 @@ Common failures by pipeline job and how to resolve them.
 
 | Failure | Cause | Fix |
 |---------|-------|-----|
-| `Connection default is not configured` | OIDC not set up or SNOW_CONFIG_B64 missing | Check OIDC org claim is configured, or set `USE_OIDC: false` and provide SNOW_CONFIG_B64 secret |
+| `Connection default is not configured` | OIDC not set up or SNOW_CONFIG_B64 missing | Check OIDC org claim is configured, or set `USE_OIDC: false` and create the SNOW_CONFIG_B64 secret: `bash local-ci/snow-config.sh \| gh secret set SNOW_CONFIG_B64 --org <org> --visibility all` |
 | `Invalid SOURCE_DATABASE` | Input doesn't match `^[A-Z0-9_]+$` | Use UPPERCASE database names only |
 | `Invalid SOURCE_SCHEMA` | Input doesn't match `^[A-Za-z0-9_]+$` | Check for special characters in schema name |
 | `pre_deploy.sql failed` | Database/schema creation failed | Verify CICD role has CREATE DATABASE privilege |

@@ -1,4 +1,4 @@
-# Jaeger v2 (OTel Collector based): OTLP in, Badger storage, 7-day retention.
+# Jaeger v2 (OTel Collector based): OTLP in, Badger storage, 365-day / 8760h retention.
 service:
   extensions: [jaeger_storage, jaeger_query, healthcheckv2]
   pipelines:
@@ -29,7 +29,7 @@ extensions:
             values: /badger/data
           ephemeral: false
           ttl:
-            spans: 168h
+            spans: 8760h
 
 receivers:
   otlp:
