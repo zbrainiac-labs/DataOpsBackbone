@@ -133,7 +133,7 @@ RUN_SEQ=$(date +%s)
 # Send traces to Jaeger if it is running (./start.sh --with-observability)
 if [[ -n "$(docker ps -q --filter label=com.docker.compose.service=jaeger)" ]]; then
   echo "OTEL_EXPORTER_OTLP_ENDPOINT=host.docker.internal:4317" >> "$TMP/env"
-  echo "Tracing to Jaeger: http://localhost:16686 (service dataops-pipeline)"
+  echo "Tracing to Jaeger: http://localhost:16686 (service = project name, e.g. $PROJECT_NAME)"
 fi
 
 # --- 4. Run

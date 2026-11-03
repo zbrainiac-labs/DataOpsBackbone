@@ -96,7 +96,7 @@ env:
   DCM_TARGET: ${{ inputs.DCM_TARGET }}
   BASH_ENV: /usr/local/bin/lib.sh
   OTEL_ENABLED: ${{ inputs.OTEL_ENABLED }}
-  OTEL_SERVICE_NAME: dataops-pipeline
+  OTEL_SERVICE_NAME: ${{ github.event.repository.name }}  # one Jaeger service per consumer repo
 
 defaults:
   run:

@@ -570,7 +570,7 @@ pipeline <repo>          overall result (finish job)
 ```
 
 ```bash
-./start.sh --with-observability      # adds Jaeger; UI on http://localhost:16686 (service: dataops-pipeline)
+./start.sh --with-observability      # adds Jaeger; UI on http://localhost:16686 (one service per project, e.g. project-one)
 ```
 
 - One container (`jaegertracing/all-in-one`, Badger storage, 7-day retention) on its own `otelnet` network; SonarQube and Postgres are not reachable from it.
