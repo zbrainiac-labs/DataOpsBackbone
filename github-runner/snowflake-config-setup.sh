@@ -24,7 +24,7 @@ echo "$SNOW_CONFIG_B64" | base64 --decode > "$SNOW_DIR/config.toml"
 chmod 600 "$SNOW_DIR/config.toml"
 
 if [[ -z "${CONNECTION_NAME:-}" || "$CONNECTION_NAME" == "default_value_here" ]]; then
-  CONNECTION_NAME=$(grep -oP '^\[connections\.\K[^\]]+' "$SNOW_DIR/config.toml" | head -1)
+  CONNECTION_NAME=$(sed -n 's/^\[connections\.\([^]]*\)\].*/\1/p' "$SNOW_DIR/config.toml" | head -1)
   if [[ -n "$CONNECTION_NAME" ]]; then
     log_info "Auto-detected CONNECTION_NAME: $CONNECTION_NAME"
     export CONNECTION_NAME
@@ -38,7 +38,8 @@ fi
 PAT_TOKEN=$(grep -A10 "\[connections\.$CONNECTION_NAME\]" "$SNOW_DIR/config.toml" | grep -E '^token[[:space:]]*=' | head -1 | sed 's/.*= *"\(.*\)"/\1/')
 if [[ -n "$PAT_TOKEN" ]]; then
   PAYLOAD=$(echo "$PAT_TOKEN" | cut -d'.' -f2)
-  PADDED=$(echo "$PAYLOAD" | awk '{while(length%4)$0=$0"=";print}')
+  # JWT payload is base64url: map to standard base64 and pad
+  PADDED=$(echo "$PAYLOAD" | tr '_-' '/+' | awk '{while(length%4)$0=$0"=";print}')
   EXP=$(echo "$PADDED" | base64 --decode 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('exp',''))" 2>/dev/null || true)
   if [[ -n "$EXP" && "$EXP" =~ ^[0-9]+$ ]]; then
     NOW=$(date +%s)
