@@ -1,0 +1,354 @@
+{
+  "uid": "dataops-jobs-steps",
+  "title": "Jobs and steps",
+  "description": "Where pipeline time goes and which steps fail.",
+  "tags": [
+    "dataops"
+  ],
+  "editable": false,
+  "schemaVersion": 41,
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
+  "refresh": "1m",
+  "timezone": "browser",
+  "templating": {
+    "list": [
+      {
+        "name": "repo",
+        "label": "Repository",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "victoriametrics"
+        },
+        "query": {
+          "query": "label_values(traces_span_metrics_calls_total, service_name)",
+          "refId": "repo"
+        },
+        "definition": "label_values(traces_span_metrics_calls_total, service_name)",
+        "refresh": 2,
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "sort": 1
+      },
+      {
+        "name": "ref",
+        "label": "Ref",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "victoriametrics"
+        },
+        "query": {
+          "query": "label_values(traces_span_metrics_calls_total, vcs_ref)",
+          "refId": "ref"
+        },
+        "definition": "label_values(traces_span_metrics_calls_total, vcs_ref)",
+        "refresh": 2,
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "sort": 1
+      },
+      {
+        "name": "job",
+        "label": "Job",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "victoriametrics"
+        },
+        "query": {
+          "query": "label_values(traces_span_metrics_calls_total, cicd_job)",
+          "refId": "job"
+        },
+        "definition": "label_values(traces_span_metrics_calls_total, cicd_job)",
+        "refresh": 2,
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "sort": 1
+      },
+      {
+        "name": "database",
+        "label": "Database",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "victoriametrics"
+        },
+        "query": {
+          "query": "label_values(traces_span_metrics_calls_total, sf_database)",
+          "refId": "database"
+        },
+        "definition": "label_values(traces_span_metrics_calls_total, sf_database)",
+        "refresh": 2,
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "sort": 1
+      },
+      {
+        "name": "target",
+        "label": "DCM target",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "victoriametrics"
+        },
+        "query": {
+          "query": "label_values(traces_span_metrics_calls_total, dcm_target)",
+          "refId": "target"
+        },
+        "definition": "label_values(traces_span_metrics_calls_total, dcm_target)",
+        "refresh": 2,
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "sort": 1
+      },
+      {
+        "name": "dry_run",
+        "label": "Dry run",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "victoriametrics"
+        },
+        "query": {
+          "query": "label_values(traces_span_metrics_calls_total, cicd_dry_run)",
+          "refId": "dry_run"
+        },
+        "definition": "label_values(traces_span_metrics_calls_total, cicd_dry_run)",
+        "refresh": 2,
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "sort": 1
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 8,
+      "title": "p95 duration per job",
+      "type": "bargauge",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le, cicd_job) (increase(traces_span_metrics_duration_seconds_bucket{span_name=~\"job .*\",service_name=~\"$repo\",vcs_ref=~\"$ref\",cicd_job=~\"$job\",sf_database=~\"$database\",dcm_target=~\"$target\",cicd_dry_run=~\"$dry_run\"}[$__range])))",
+          "legendFormat": "{{cicd_job}}",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal"
+      }
+    },
+    {
+      "id": 9,
+      "title": "10 slowest steps (p95)",
+      "type": "bargauge",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "topk(10, histogram_quantile(0.95, sum by (le, span_name) (increase(traces_span_metrics_duration_seconds_bucket{span_name!~\"pipeline|job .*|queue .*\",service_name=~\"$repo\",vcs_ref=~\"$ref\",cicd_job=~\"$job\",sf_database=~\"$database\",dcm_target=~\"$target\",cicd_dry_run=~\"$dry_run\"}[$__range]))))",
+          "legendFormat": "{{span_name}}",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal"
+      }
+    },
+    {
+      "id": 10,
+      "title": "Failure rate per step",
+      "type": "bargauge",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "sum by (span_name) (increase(traces_span_metrics_calls_total{span_name!~\"pipeline|job .*|queue .*\",service_name=~\"$repo\",vcs_ref=~\"$ref\",cicd_job=~\"$job\",sf_database=~\"$database\",dcm_target=~\"$target\",cicd_dry_run=~\"$dry_run\",status_code=\"STATUS_CODE_ERROR\"}[$__range])) / sum by (span_name) (increase(traces_span_metrics_calls_total{span_name!~\"pipeline|job .*|queue .*\",service_name=~\"$repo\",vcs_ref=~\"$ref\",cicd_job=~\"$job\",sf_database=~\"$database\",dcm_target=~\"$target\",cicd_dry_run=~\"$dry_run\"}[$__range])) > 0",
+          "legendFormat": "{{span_name}}",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal"
+      }
+    },
+    {
+      "id": 11,
+      "title": "Queue time per job (p95, GitHub runs only)",
+      "type": "bargauge",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le, span_name) (increase(traces_span_metrics_duration_seconds_bucket{span_name=~\"queue .*\",service_name=~\"$repo\",vcs_ref=~\"$ref\",cicd_job=~\"$job\",sf_database=~\"$database\",dcm_target=~\"$target\",cicd_dry_run=~\"$dry_run\"}[$__range])))",
+          "legendFormat": "{{span_name}}",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal"
+      }
+    },
+    {
+      "id": 12,
+      "title": "Average step duration per database / DCM target",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 24,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "sum by (sf_database, dcm_target) (increase(traces_span_metrics_duration_seconds_sum{span_name!~\"pipeline|job .*|queue .*\",service_name=~\"$repo\",vcs_ref=~\"$ref\",cicd_job=~\"$job\",sf_database=~\"$database\",dcm_target=~\"$target\",cicd_dry_run=~\"$dry_run\"}[$__interval])) / sum by (sf_database, dcm_target) (increase(traces_span_metrics_duration_seconds_count{span_name!~\"pipeline|job .*|queue .*\",service_name=~\"$repo\",vcs_ref=~\"$ref\",cicd_job=~\"$job\",sf_database=~\"$database\",dcm_target=~\"$target\",cicd_dry_run=~\"$dry_run\"}[$__interval]))",
+          "legendFormat": "{{sf_database}} {{dcm_target}}",
+          "instant": false,
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "interval": "1h"
+    }
+  ],
+  "links": [
+    {
+      "title": "DataOps",
+      "type": "dashboards",
+      "tags": [
+        "dataops"
+      ],
+      "asDropdown": true
+    }
+  ]
+}

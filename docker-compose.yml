@@ -86,7 +86,7 @@ services:
       SONAR_HOST: http://sonarqube:9000
       CONNECTION_NAME: ${CONNECTION_NAME}
       # Tracing is on by default; `./start.sh --no-observability` sets this empty
-      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT-jaeger:4317}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT-otel-collector:4317}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - sonar_env:/sonar:ro
@@ -97,21 +97,82 @@ services:
       - sonarnet
       - otelnet
 
-  # Pipeline tracing (OpenTelemetry), started by default -> UI http://localhost:16686
-  # Opt out: ./start.sh --no-observability
-  jaeger:
-    image: jaegertracing/jaeger:2.22.0
-    container_name: telemetry
+  # Pipeline observability, started by default (opt out: ./start.sh --no-observability).
+  # runners -> otel-collector -> VictoriaTraces (spans) + VictoriaMetrics (spanmetrics)
+  # -> Grafana http://localhost:3000. All ports bound to localhost only.
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.164.0
+    container_name: otel-collector
     restart: unless-stopped
-    command: ["--config", "/etc/jaeger/config.yaml"]
-    user: "0"  # badger needs write access to the named volume (root-owned)
+    command: ["--config=/etc/otelcol/config.yaml"]
+    depends_on: [victoriatraces, victoriametrics]
     ports:
-      - "16686:16686"
-      # OTLP for local-ci (act job containers can only join sonarnet); localhost only
+      # OTLP for local-ci (act job containers can only join sonarnet)
       - "127.0.0.1:4317:4317"
+      - "127.0.0.1:4318:4318"
+      # health_check extension (image has no shell: checked from the host by start.sh)
+      - "127.0.0.1:13133:13133"
     volumes:
-      - ./jaeger/config.yaml:/etc/jaeger/config.yaml:ro
-      - jaeger_v2_data:/badger
+      - ./observability/otel-collector.yaml:/etc/otelcol/config.yaml:ro
+    networks:
+      - otelnet
+
+  victoriatraces:
+    image: victoriametrics/victoria-traces:v0.12.1
+    container_name: victoriatraces
+    restart: unless-stopped
+    command:
+      - -storageDataPath=/storage
+      - -retentionPeriod=${OBSERVABILITY_RETENTION:-365d}
+      - -retention.maxDiskSpaceUsageBytes=${OBSERVABILITY_MAX_DISK:-20GiB}
+    ports:
+      - "127.0.0.1:10428:10428"
+    volumes:
+      - vtdata:/storage
+    networks:
+      - otelnet
+
+  victoriametrics:
+    image: victoriametrics/victoria-metrics:v1.155.0
+    container_name: victoriametrics
+    restart: unless-stopped
+    command:
+      - -storageDataPath=/storage
+      - -retentionPeriod=${OBSERVABILITY_RETENTION:-365d}
+      - -storage.minFreeDiskSpaceBytes=1GiB
+      - -opentelemetry.usePrometheusNaming
+    ports:
+      - "127.0.0.1:8428:8428"
+    volumes:
+      - vmdata:/storage
+    networks:
+      - otelnet
+
+  grafana:
+    image: grafana/grafana:13.3.0
+    container_name: grafana
+    restart: unless-stopped
+    depends_on: [victoriatraces, victoriametrics]
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in .env}
+      # Read-only viewing without login; acceptable because the port is localhost-only
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/pipeline-overview.json
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafanadata:/var/lib/grafana
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health | grep -q ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
     networks:
       - otelnet
 
@@ -157,12 +218,14 @@ volumes:
   sonarqube_extensions:
   postgresql:
   sonar_env:
-  jaeger_v2_data:
+  vtdata:
+  vmdata:
+  grafanadata:
 
   sql_unit_report:
     name: sql_unit_report
 
 networks:
   sonarnet:
-  # Tracing only: runners/local-ci -> jaeger. SonarQube/Postgres are not on it.
+  # Observability only: runners/local-ci -> otel-collector. SonarQube/Postgres are not on it.
   otelnet:

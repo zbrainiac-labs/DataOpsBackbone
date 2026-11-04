@@ -1,0 +1,490 @@
+{
+  "uid": "dataops-pipeline-overview",
+  "title": "Pipeline overview",
+  "description": "Runs, success rate and duration trends of all consumer pipelines.",
+  "tags": [
+    "dataops"
+  ],
+  "editable": false,
+  "schemaVersion": 41,
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
+  "refresh": "1m",
+  "timezone": "browser",
+  "templating": {
+    "list": [
+      {
+        "name": "repo",
+        "label": "Repository",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "victoriametrics"
+        },
+        "query": {
+          "query": "label_values(traces_span_metrics_calls_total, service_name)",
+          "refId": "repo"
+        },
+        "definition": "label_values(traces_span_metrics_calls_total, service_name)",
+        "refresh": 2,
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "sort": 1
+      },
+      {
+        "name": "ref",
+        "label": "Ref",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "victoriametrics"
+        },
+        "query": {
+          "query": "label_values(traces_span_metrics_calls_total, vcs_ref)",
+          "refId": "ref"
+        },
+        "definition": "label_values(traces_span_metrics_calls_total, vcs_ref)",
+        "refresh": 2,
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "sort": 1
+      },
+      {
+        "name": "job",
+        "label": "Job",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "victoriametrics"
+        },
+        "query": {
+          "query": "label_values(traces_span_metrics_calls_total, cicd_job)",
+          "refId": "job"
+        },
+        "definition": "label_values(traces_span_metrics_calls_total, cicd_job)",
+        "refresh": 2,
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "sort": 1
+      },
+      {
+        "name": "database",
+        "label": "Database",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "victoriametrics"
+        },
+        "query": {
+          "query": "label_values(traces_span_metrics_calls_total, sf_database)",
+          "refId": "database"
+        },
+        "definition": "label_values(traces_span_metrics_calls_total, sf_database)",
+        "refresh": 2,
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "sort": 1
+      },
+      {
+        "name": "target",
+        "label": "DCM target",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "victoriametrics"
+        },
+        "query": {
+          "query": "label_values(traces_span_metrics_calls_total, dcm_target)",
+          "refId": "target"
+        },
+        "definition": "label_values(traces_span_metrics_calls_total, dcm_target)",
+        "refresh": 2,
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "sort": 1
+      },
+      {
+        "name": "dry_run",
+        "label": "Dry run",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "victoriametrics"
+        },
+        "query": {
+          "query": "label_values(traces_span_metrics_calls_total, cicd_dry_run)",
+          "refId": "dry_run"
+        },
+        "definition": "label_values(traces_span_metrics_calls_total, cicd_dry_run)",
+        "refresh": 2,
+        "includeAll": true,
+        "allValue": ".*",
+        "multi": true,
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "sort": 1
+      },
+      {
+        "name": "trace_repo",
+        "label": "Runs of",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "victoriametrics"
+        },
+        "query": {
+          "query": "label_values(traces_span_metrics_calls_total, service_name)",
+          "refId": "trace_repo"
+        },
+        "definition": "label_values(traces_span_metrics_calls_total, service_name)",
+        "refresh": 2,
+        "includeAll": false,
+        "multi": false,
+        "sort": 1
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Pipeline runs",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "sum(increase(traces_span_metrics_calls_total{span_name=\"pipeline\",service_name=~\"$repo\",vcs_ref=~\"$ref\",cicd_job=~\"$job\",sf_database=~\"$database\",dcm_target=~\"$target\",cicd_dry_run=~\"$dry_run\"}[$__range]))",
+          "legendFormat": "runs",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 2,
+      "title": "Success rate",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics"
+      },
+      "gridPos": {
+        "x": 6,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "sum(increase(traces_span_metrics_calls_total{span_name=\"pipeline\",service_name=~\"$repo\",vcs_ref=~\"$ref\",cicd_job=~\"$job\",sf_database=~\"$database\",dcm_target=~\"$target\",cicd_dry_run=~\"$dry_run\",cicd_pipeline_result=\"success\"}[$__range])) / sum(increase(traces_span_metrics_calls_total{span_name=\"pipeline\",service_name=~\"$repo\",vcs_ref=~\"$ref\",cicd_job=~\"$job\",sf_database=~\"$database\",dcm_target=~\"$target\",cicd_dry_run=~\"$dry_run\"}[$__range]))",
+          "legendFormat": "success",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 3,
+      "title": "Median pipeline duration",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "histogram_quantile(0.5, sum by (le) (increase(traces_span_metrics_duration_seconds_bucket{span_name=\"pipeline\",service_name=~\"$repo\",vcs_ref=~\"$ref\",cicd_job=~\"$job\",sf_database=~\"$database\",dcm_target=~\"$target\",cicd_dry_run=~\"$dry_run\"}[$__range])))",
+          "legendFormat": "p50",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 4,
+      "title": "p95 pipeline duration",
+      "type": "stat",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (increase(traces_span_metrics_duration_seconds_bucket{span_name=\"pipeline\",service_name=~\"$repo\",vcs_ref=~\"$ref\",cicd_job=~\"$job\",sf_database=~\"$database\",dcm_target=~\"$target\",cicd_dry_run=~\"$dry_run\"}[$__range])))",
+          "legendFormat": "p95",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 5,
+      "title": "Pipeline duration per repository (p50 / p95)",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 24,
+        "h": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "histogram_quantile(0.5, sum by (le, service_name) (increase(traces_span_metrics_duration_seconds_bucket{span_name=\"pipeline\",service_name=~\"$repo\",vcs_ref=~\"$ref\",cicd_job=~\"$job\",sf_database=~\"$database\",dcm_target=~\"$target\",cicd_dry_run=~\"$dry_run\"}[$__interval])))",
+          "legendFormat": "{{service_name}} p50",
+          "instant": false,
+          "range": true
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le, service_name) (increase(traces_span_metrics_duration_seconds_bucket{span_name=\"pipeline\",service_name=~\"$repo\",vcs_ref=~\"$ref\",cicd_job=~\"$job\",sf_database=~\"$database\",dcm_target=~\"$target\",cicd_dry_run=~\"$dry_run\"}[$__interval])))",
+          "legendFormat": "{{service_name}} p95",
+          "instant": false,
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {},
+      "interval": "1h"
+    },
+    {
+      "id": 6,
+      "title": "Runs per repository by result",
+      "type": "bargauge",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 12,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "sum by (service_name, cicd_pipeline_result) (increase(traces_span_metrics_calls_total{span_name=\"pipeline\",service_name=~\"$repo\",vcs_ref=~\"$ref\",cicd_job=~\"$job\",sf_database=~\"$database\",dcm_target=~\"$target\",cicd_dry_run=~\"$dry_run\"}[$__range]))",
+          "legendFormat": "{{service_name}} {{cicd_pipeline_result}}",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "basic"
+      }
+    },
+    {
+      "id": 7,
+      "title": "Failed steps",
+      "type": "table",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 12,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "sort_desc(sum by (service_name, span_name) (increase(traces_span_metrics_calls_total{service_name=~\"$repo\",vcs_ref=~\"$ref\",cicd_job=~\"$job\",sf_database=~\"$database\",dcm_target=~\"$target\",cicd_dry_run=~\"$dry_run\",span_name!~\"pipeline|job .*|queue .*\",status_code=\"STATUS_CODE_ERROR\"}[$__range]))) > 0",
+          "legendFormat": "",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {},
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "renameByName": {
+              "service_name": "Repository",
+              "span_name": "Step",
+              "Value": "Failures"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Latest pipeline runs (click a trace ID for the waterfall)",
+      "type": "table",
+      "datasource": {
+        "type": "jaeger",
+        "uid": "victoriatraces"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 21,
+        "w": 24,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "jaeger",
+            "uid": "victoriatraces"
+          },
+          "queryType": "search",
+          "service": "$trace_repo",
+          "operation": "pipeline",
+          "limit": 20
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {}
+    }
+  ],
+  "links": [
+    {
+      "title": "DataOps",
+      "type": "dashboards",
+      "tags": [
+        "dataops"
+      ],
+      "asDropdown": true
+    }
+  ]
+}

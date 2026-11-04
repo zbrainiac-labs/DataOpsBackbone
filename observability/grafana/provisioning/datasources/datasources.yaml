@@ -1,0 +1,18 @@
+apiVersion: 1
+datasources:
+  - name: VictoriaTraces
+    uid: victoriatraces
+    type: jaeger
+    access: proxy
+    # VictoriaTraces serves the Jaeger Query API under this prefix
+    url: http://victoriatraces:10428/select/jaeger
+    editable: false
+  - name: VictoriaMetrics
+    uid: victoriametrics
+    type: prometheus
+    access: proxy
+    url: http://victoriametrics:8428
+    isDefault: true
+    editable: false
+    jsonData:
+      timeInterval: 15s

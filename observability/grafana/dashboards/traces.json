@@ -1,0 +1,166 @@
+{
+  "uid": "dataops-traces",
+  "title": "Traces",
+  "description": "Jaeger-style search: service, operation, tags, duration range, limit.",
+  "tags": [
+    "dataops"
+  ],
+  "editable": false,
+  "schemaVersion": 41,
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
+  "refresh": "1m",
+  "timezone": "browser",
+  "templating": {
+    "list": [
+      {
+        "name": "service",
+        "label": "Service (repo)",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "victoriametrics"
+        },
+        "query": {
+          "query": "label_values(traces_span_metrics_calls_total, service_name)",
+          "refId": "service"
+        },
+        "definition": "label_values(traces_span_metrics_calls_total, service_name)",
+        "refresh": 2,
+        "sort": 1
+      },
+      {
+        "name": "operation",
+        "label": "Operation",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "victoriametrics"
+        },
+        "query": {
+          "query": "label_values(traces_span_metrics_calls_total{service_name=\"$service\"}, span_name)",
+          "refId": "operation"
+        },
+        "definition": "label_values(traces_span_metrics_calls_total{service_name=\"$service\"}, span_name)",
+        "refresh": 2,
+        "includeAll": true,
+        "allValue": "",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "sort": 1
+      },
+      {
+        "name": "tags",
+        "label": "Tags (k=v k2=v2)",
+        "type": "textbox",
+        "query": ""
+      },
+      {
+        "name": "min_duration",
+        "label": "Min duration (e.g. 10m)",
+        "type": "textbox",
+        "query": ""
+      },
+      {
+        "name": "max_duration",
+        "label": "Max duration",
+        "type": "textbox",
+        "query": ""
+      },
+      {
+        "name": "limit",
+        "label": "Limit",
+        "type": "custom",
+        "query": "20,50,100,500",
+        "current": {
+          "text": "20",
+          "value": "20"
+        }
+      },
+      {
+        "name": "trace_id",
+        "label": "Trace ID",
+        "type": "textbox",
+        "query": ""
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Search (click a trace ID to open it)",
+      "type": "table",
+      "datasource": {
+        "type": "jaeger",
+        "uid": "victoriatraces"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 10
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "jaeger",
+            "uid": "victoriatraces"
+          },
+          "queryType": "search",
+          "service": "$service",
+          "operation": "$operation",
+          "tags": "$tags",
+          "minDuration": "$min_duration",
+          "maxDuration": "$max_duration",
+          "limit": "$limit"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "options": {}
+    },
+    {
+      "id": 2,
+      "title": "Trace waterfall (paste a trace ID above)",
+      "type": "traces",
+      "datasource": {
+        "type": "jaeger",
+        "uid": "victoriatraces"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 10,
+        "w": 24,
+        "h": 18
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "jaeger",
+            "uid": "victoriatraces"
+          },
+          "query": "$trace_id"
+        }
+      ],
+      "options": {}
+    }
+  ],
+  "links": [
+    {
+      "title": "DataOps",
+      "type": "dashboards",
+      "tags": [
+        "dataops"
+      ],
+      "asDropdown": true
+    }
+  ]
+}

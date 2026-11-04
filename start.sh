@@ -1,7 +1,7 @@
 #!/bin/bash
 # Build the images locally and start the stack.
 # Usage: ./start.sh [--no-observability]
-#   --no-observability   do not start Jaeger; runners send no traces
+#   --no-observability   do not start otel-collector/VictoriaTraces/VictoriaMetrics/Grafana; runners send no traces
 set -Eeuo pipefail
 
 OBSERVABILITY=true
@@ -13,6 +13,8 @@ for arg in "$@"; do
     *) echo "Unknown option: $arg"; exit 1 ;;
   esac
 done
+
+OBS_SERVICES=(otel-collector victoriatraces victoriametrics grafana)
 
 # Step 0: Clean up (optional)
 # docker compose down -v --remove-orphans
@@ -42,6 +44,20 @@ esac
 # local-ci/snow-config.sh).
 [[ -f .env ]] || { echo "Missing .env (see README: Configure .env)"; exit 1; }
 
+UP_ARGS=()
+if [[ "$OBSERVABILITY" == true ]]; then
+  GRAFANA_PASS=$(grep -m1 '^GRAFANA_ADMIN_PASSWORD=' .env | cut -d= -f2- || true)
+  if [[ -z "$GRAFANA_PASS" || "$GRAFANA_PASS" == "admin" ]]; then
+    echo "Set GRAFANA_ADMIN_PASSWORD in .env (not empty, not 'admin'), or use --no-observability"
+    exit 1
+  fi
+else
+  export OTEL_EXPORTER_OTLP_ENDPOINT=""
+  # Compose interpolates the grafana service even when scaled to 0
+  grep -q '^GRAFANA_ADMIN_PASSWORD=.' .env || export GRAFANA_ADMIN_PASSWORD=unused-observability-off
+  for svc in "${OBS_SERVICES[@]}"; do UP_ARGS+=(--scale "$svc=0"); done
+fi
+
 echo "Building GitHub runner image for $PLATFORM..."
 docker build \
   --platform=$PLATFORM \
@@ -60,15 +76,17 @@ docker build \
 echo "Starting all services with docker compose (detached)..."
 # Detached: the script exits once services are up/healthy instead of staying
 # attached to the containers (previously one ./start.sh process per deploy).
-UP_ARGS=()
-if [[ "$OBSERVABILITY" == true ]]; then
-  echo "Observability enabled: Jaeger UI on http://localhost:16686"
-else
-  export OTEL_EXPORTER_OTLP_ENDPOINT=""
-  UP_ARGS=(--scale jaeger=0)
-  docker compose --env-file .env rm -sf jaeger >/dev/null 2>&1 || true
-  echo "Observability disabled"
+if [[ "$OBSERVABILITY" == false ]]; then
+  docker compose --env-file .env rm -sf "${OBS_SERVICES[@]}" >/dev/null 2>&1 || true
 fi
 docker compose --env-file .env up -d --wait --remove-orphans ${UP_ARGS[@]+"${UP_ARGS[@]}"}
 docker compose --env-file .env ps
+
+if [[ "$OBSERVABILITY" == true ]]; then
+  # Warn only: tracing is fail-open, pipelines run without the backends
+  bash local-ci/observability-smoke.sh --quick || true
+  echo "Observability: Grafana on http://localhost:3000 (folder DataOps)"
+else
+  echo "Observability disabled"
+fi
 echo "Logs: docker compose logs -f [service]"

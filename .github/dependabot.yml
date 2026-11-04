@@ -19,7 +19,9 @@ updates:
     directory: "/sonarqube"
     schedule:
       interval: "monthly"
-  # postgres, jaeger, nginx in docker-compose.yml (brainiac/* are built here)
+  # postgres, nginx, otel-collector, victoria-traces/-metrics, grafana in
+  # docker-compose.yml (brainiac/* are built here). Run local-ci/observability-smoke.sh
+  # on every observability bump (VictoriaTraces is pre-1.0: minors may break).
   - package-ecosystem: "docker-compose"
     directory: "/"
     schedule:
@@ -30,6 +32,9 @@ updates:
     ignore:
       # A Postgres major upgrade needs a data migration (pg_upgrade/dump)
       - dependency-name: "postgres"
+        update-types: ["version-update:semver-major"]
+      # Grafana majors can change dashboard JSON/provisioning; upgrade manually
+      - dependency-name: "grafana/grafana"
         update-types: ["version-update:semver-major"]
       - dependency-name: "brainiac/*"
 # Not covered by any bot: tool ARGs in github-runner/Dockerfile (see comment there).

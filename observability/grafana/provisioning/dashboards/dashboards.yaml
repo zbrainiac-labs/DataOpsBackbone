@@ -1,0 +1,11 @@
+apiVersion: 1
+providers:
+  # Dashboards are code: edit, export the JSON into observability/grafana/dashboards/
+  # and open a PR (see CONTRIBUTING.md). UI changes cannot be saved.
+  - name: dataops
+    folder: DataOps
+    type: file
+    allowUiUpdates: false
+    disableDeletion: true
+    options:
+      path: /var/lib/grafana/dashboards
