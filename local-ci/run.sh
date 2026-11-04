@@ -119,10 +119,10 @@ echo "SONAR_TOKEN=$SONAR_TOKEN" > "$TMP/env"
 RUN_SEQ=$(date +%s)
 { echo "GITHUB_RUN_NUMBER=$RUN_SEQ"; echo "GITHUB_RUN_ID=$RUN_SEQ"; } >> "$TMP/env"
 
-# Send traces to Jaeger if it is running (default with ./start.sh)
-if [[ -n "$(docker ps -q --filter label=com.docker.compose.service=jaeger)" ]]; then
+# Send traces to the otel-collector if it is running (default with ./start.sh)
+if [[ -n "$(docker ps -q --filter label=com.docker.compose.service=otel-collector)" ]]; then
   echo "OTEL_EXPORTER_OTLP_ENDPOINT=host.docker.internal:4317" >> "$TMP/env"
-  echo "Tracing to Jaeger: http://localhost:16686 (service = project name, e.g. $PROJECT_NAME)"
+  echo "Tracing via otel-collector, reports in Grafana: http://localhost:3000 (service = project name, e.g. $PROJECT_NAME)"
 fi
 
 # --- 4. Run

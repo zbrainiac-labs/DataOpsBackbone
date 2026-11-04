@@ -18,10 +18,11 @@ cd DataOpsBackbone
 pip install ruff mypy pytest sqlfluff pyyaml regex types-regex
 
 # Create .env with your credentials (see "Configure .env" in README.md):
-# GitHub org/token, Postgres + SonarQube passwords, SNOW_ACCOUNT, SNOW_USER, SNOW_PAT
+# GitHub org/token, Postgres + SonarQube passwords, SNOW_ACCOUNT, SNOW_USER, SNOW_PAT,
+# GRAFANA_ADMIN_PASSWORD (required unless --no-observability)
 
-# Build the images locally and start the stack (SonarQube, runners, Jaeger, nginx)
-./start.sh                      # add --no-observability to skip Jaeger
+# Build the images locally and start the stack (SonarQube, runners, observability, nginx)
+./start.sh                      # add --no-observability to skip collector/VictoriaTraces/VictoriaMetrics/Grafana
 ```
 
 ## Running Tests
@@ -46,6 +47,9 @@ cd sqlfluff && python3 lint.py test_sql/good_example.sql
 # SonarQube self-scan with the stack's SonarQube (same gate as CI)
 bash local-ci/sonar-self-scan.sh
 
+# Observability stack: parity smoke test (requires running stack)
+bash local-ci/observability-smoke.sh
+
 # Full pipeline locally with act (requires running stack + Snowflake credentials)
 local-ci/run.sh --project=../project-one --full
 ```
@@ -60,8 +64,8 @@ local-ci/run.sh --project=../project-one --full
 | `.github/workflows/` | Reusable pipeline (`dataops-pipeline.yml`) + CI and image publishing (`ci.yml`) |
 | `.github/actions/snowflake-connect/` | Composite action for Snowflake auth |
 | `sonarqube/` | Custom SonarQube image with SQL + Text plugins |
-| `local-ci/` | `run.sh` (pipeline via act) and `sonar-self-scan.sh` (SonarQube gate) |
-| `jaeger/` | Jaeger v2 config for pipeline tracing |
+| `local-ci/` | `run.sh` (pipeline via act), `sonar-self-scan.sh` (SonarQube gate), `observability-smoke.sh` |
+| `observability/` | OTel Collector config, Grafana provisioning and dashboards |
 | `tests/` | Pytest test suite for Python utilities |
 
 ## Making Changes
@@ -82,6 +86,16 @@ Dependabot updates GitHub Actions, the `FROM` images and the images in `docker-c
    `docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy image --severity CRITICAL,HIGH brainiac/local-github-runner`
    (must report 0, CI blocks otherwise).
 3. Run `bash local-ci/sonar-self-scan.sh` and `local-ci/run.sh --dry-run`.
+
+For observability image bumps (collector, VictoriaTraces, VictoriaMetrics, Grafana) also run `bash local-ci/observability-smoke.sh`. Grafana major versions are excluded from Dependabot and upgraded by hand.
+
+## Changing a Grafana dashboard
+
+Dashboards in `observability/grafana/dashboards/` are provisioned read-only (`allowUiUpdates: false`):
+
+1. Open the dashboard in Grafana (http://localhost:3000, log in as `admin`), edit it, and use **Export → Export as JSON** (no "export for sharing externally", so data source UIDs stay `victoriametrics` / `victoriatraces`).
+2. Replace the file in `observability/grafana/dashboards/`, keeping the `uid`.
+3. `docker compose restart grafana`, check it, run `pytest tests/test_observability_config.py`, and open a PR.
 
 ## Rule Development
 

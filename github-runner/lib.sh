@@ -49,9 +49,9 @@ retry() {
 }
 
 # --- OpenTelemetry (fail-open: never changes a step's result) -----------------
-# Env: OTEL_ENABLED=true, OTEL_EXPORTER_OTLP_ENDPOINT=host:4317 (e.g. jaeger:4317).
+# Env: OTEL_ENABLED=true, OTEL_EXPORTER_OTLP_ENDPOINT=host:4317 (e.g. otel-collector:4317).
 #
-# Service name = consumer repo (one Jaeger service per project); the backbone
+# Service name = consumer repo (one trace service per project); the backbone
 # workflow is recorded as cicd.pipeline.name.
 #
 # Span tree per run (ids are derived from run_id + attempt, so every job on any

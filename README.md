@@ -251,6 +251,7 @@ When disabled (default), quality gate failures are reported but do not block the
 | [SyntheticRetailBank](https://github.com/zbrainiac-labs/SyntheticRetailBank) | AAA_DEV_SYNTHETIC_BANK | AAA_DCM | CRM_RAW_v001, PAY_RAW_v001, ... | ✅ |
 | [sharing_any_objects](https://github.com/zbrainiac-labs/sharing_any_objects) | ECO_DEV | ECO_DCM | ECO_RAW_v001 | ✅ |
 | [crew-asset-management](https://github.com/zbrainiac-labs/crew-asset-management) | SAM_DEMO | SAM_DCM | SAM_RAW_v001 | |
+| [hadoop-to-snowflake](https://github.com/zbrainiac-labs/hadoop-to-snowflake) | HAM_DEV | HAM_DCM | HAM_RAW_v001 | |
 
 ---
 
@@ -286,6 +287,7 @@ DataOpsBackbone/
 ├── local-ci/
 │   ├── run.sh                  # Run a consumer's pipeline locally with act (no commit/push)
 │   ├── snow-config.sh          # Build SNOW_CONFIG_B64 from .env (local-ci + GitHub secret)
+│   ├── observability-smoke.sh  # Observability parity/health check (--quick used by start.sh)
 │   └── sonar-self-scan.sh      # Scan this repo with local SonarQube, fail on BLOCKER/CRITICAL
 ├── sqlfluff/                   # Standalone SQLFluff linter (alternative to SonarQube)
 │   ├── .sqlfluff               # SQLFluff config (all rules)
@@ -297,8 +299,10 @@ DataOpsBackbone/
 │   ├── TROUBLESHOOTING.md      # Per-job failure/recovery guide + local simulation
 │   ├── PROMOTION.md            # Promotion flow dev -> prod
 │   ├── SQL-RULES.md            # Rule regex patterns, scanner config, rule ownership
-│   └── OBSERVABILITY.md        # Pipeline tracing (OpenTelemetry + Jaeger)
-├── jaeger/config.yaml          # Jaeger v2 config (OTLP in, Badger, 365 days)
+│   └── OBSERVABILITY.md        # Pipeline tracing + reports (OpenTelemetry, VictoriaTraces/-Metrics, Grafana)
+├── observability/
+│   ├── otel-collector.yaml     # OTLP in, spans -> VictoriaTraces, spanmetrics -> VictoriaMetrics
+│   └── grafana/                # Provisioned data sources + 3 read-only dashboards (folder DataOps)
 ├── sonarqube/
 │   ├── Dockerfile              # Custom SonarQube image
 │   ├── quality-profiles/       # Exported custom quality profiles
@@ -306,8 +310,8 @@ DataOpsBackbone/
 ├── nginx/default.conf          # Nginx for test report serving
 ├── images/                     # Documentation images
 ├── sonar-project.properties    # Self-scan config for this repo
-├── docker-compose.yml          # SonarQube, sonar-init, 2 ephemeral runners, Jaeger, nginx; profile: local-ci
-└── start.sh                    # One-command startup (detached, Jaeger included); --no-observability skips it
+├── docker-compose.yml          # SonarQube, sonar-init, 2 ephemeral runners, observability (4), nginx; profile: local-ci
+└── start.sh                    # One-command startup (detached, observability included); --no-observability skips it
 ```
 
 ---
@@ -406,7 +410,7 @@ The history lives in UnitTH run stores, one JSON file per project in `./unitth-s
 
 ### Pipeline tracing (OpenTelemetry)
 
-Jaeger starts with the stack (UI http://localhost:16686, one service per project); `./start.sh --no-observability` turns it off. Span layout and details: [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md).
+Pipeline traces and reports start with the stack: Grafana on http://localhost:3000 (folder "DataOps": Pipeline overview, Jobs and steps, Traces; one trace service per project). `./start.sh --no-observability` turns it off. Architecture, reports and the Jaeger mapping: [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md).
 
 ## SonarQube + SQLFluff — Integrated Scanning
 
@@ -471,6 +475,11 @@ SNOW_DATABASE=DATAOPS
 SNOW_SCHEMA=IOT_RAW_V001
 SNOW_WAREHOUSE=MD_TEST_WH
 SNOW_PAT=<your PAT from Step 2>
+
+# Observability (see docs/OBSERVABILITY.md); not needed with --no-observability
+GRAFANA_ADMIN_PASSWORD=<CHANGE_ME_STRONG_PASSWORD>   # required, must not be "admin"
+OBSERVABILITY_RETENTION=365d
+OBSERVABILITY_MAX_DISK=20GiB
 ```
 
 ---
@@ -498,6 +507,7 @@ bash local-ci/snow-config.sh | gh secret set SNOW_CONFIG_B64 --org zbrainiac-lab
 3. Push to any consumer repo — the reusable workflow triggers automatically
 4. Check results in SonarQube
 5. Monitor SQL test results (incl. history) at: [http://localhost:8080](http://localhost:8080)
+6. Pipeline reports and traces in Grafana: [http://localhost:3000](http://localhost:3000) (read-only without login; admin: `GRAFANA_ADMIN_PASSWORD`)
 
 ---
 
@@ -510,7 +520,10 @@ bash local-ci/snow-config.sh | gh secret set SNOW_CONFIG_B64 --org zbrainiac-lab
 | `sonar-init` | One-shot: shared Sonar token + custom rules, then exits | - |
 | `runner` (x2) | Ephemeral org-level self-hosted GitHub runners | - |
 | `nginx-server` | Serves UnitTestHistory HTML reports | 8080 |
-| `jaeger` | Pipeline traces (Jaeger v2), on by default; `./start.sh --no-observability` skips it | 16686 |
+| `otel-collector` | Receives pipeline spans (OTLP), derives spanmetrics | 127.0.0.1:4317/4318 |
+| `victoriatraces` | Trace storage, Jaeger Query API | 127.0.0.1:10428 |
+| `victoriametrics` | Spanmetrics storage, Prometheus API | 127.0.0.1:8428 |
+| `grafana` | Pipeline reports + trace search (folder DataOps) | 127.0.0.1:3000 |
 | `local-ci` | Local workflow simulation with act, profile `local-ci` | - |
 
 ---
@@ -529,7 +542,10 @@ bash local-ci/snow-config.sh | gh secret set SNOW_CONFIG_B64 --org zbrainiac-lab
 | Python | 3.10+ | 3.14 | Runner image (Ubuntu 26.04, venv in /opt/venv) |
 | yq | 4.x | 4.54.1 | Built from source in the image |
 | Java | 21 | eclipse-temurin:21.0.13_9-jre-resolute | Scanner + UnitTestHistory |
-| Jaeger | 2.x | 2.22.0 | OTLP gRPC, Badger storage |
+| OpenTelemetry Collector | contrib | 0.164.0 | OTLP in, span_metrics connector |
+| VictoriaTraces | 0.12 | v0.12.1 | Pre-1.0: smoke-test every bump |
+| VictoriaMetrics | 1.x | v1.155.0 | `-opentelemetry.usePrometheusNaming` |
+| Grafana | 13.x | 13.3.0 | Majors upgraded manually |
 
 ---
 

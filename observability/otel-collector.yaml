@@ -1,0 +1,61 @@
+# OpenTelemetry Collector: receives pipeline spans from otel-cli (lib.sh),
+# stores every span in VictoriaTraces and derives duration/count metrics
+# (spanmetrics) into VictoriaMetrics. See docs/OBSERVABILITY.md.
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 256
+  batch: {}
+
+connectors:
+  span_metrics:
+    histogram:
+      unit: s
+      explicit:
+        # Pipeline steps run seconds to hours: no 5-minute cap
+        buckets: [1s, 2s, 5s, 10s, 20s, 30s, 1m, 2m, 5m, 10m, 15m, 20m, 30m, 45m, 1h, 2h]
+    # Low-cardinality span attributes only. Per-run values (cicd.pipeline.run.id,
+    # cicd.worker.name, cicd.job.queue_seconds) stay on the traces.
+    dimensions:
+      - name: vcs.repository
+      - name: vcs.ref
+      - name: cicd.job
+      - name: cicd.pipeline.name
+      - name: cicd.pipeline.result
+      - name: cicd.job.result
+      - name: cicd.dry_run
+      - name: sf.database
+      - name: sf.schema
+      - name: dcm.target
+      - name: exit_code
+    metrics_flush_interval: 15s
+
+exporters:
+  otlp_http/traces:
+    endpoint: http://victoriatraces:10428/insert/opentelemetry
+  otlp_http/metrics:
+    endpoint: http://victoriametrics:8428/opentelemetry
+
+service:
+  extensions: [health_check]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlp_http/traces, span_metrics]
+    metrics:
+      receivers: [span_metrics]
+      processors: [memory_limiter, batch]
+      exporters: [otlp_http/metrics]
