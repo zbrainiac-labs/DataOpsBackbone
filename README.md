@@ -544,7 +544,7 @@ bash local-ci/snow-config.sh | gh secret set SNOW_CONFIG_B64 --org zbrainiac-lab
 | Component | Minimum | Tested | Notes |
 |-----------|---------|--------|-------|
 | Snowflake CLI | 3.16.0 | 3.32.1 | OIDC requires >= 3.11 |
-| SonarQube | 10.0+ | 26.10 (Community Build) | Scanner 8.x requires 10+ |
+| SonarQube | 10.0+ | 26.11 (Community Build) | Scanner 8.x requires 10+ |
 | Sonar Scanner CLI | 8.0.0 | 8.3.1.16491 | Use 5.x for SonarQube 9.x |
 | SQLFluff | 3.0+ | 4.5 | Snowflake dialect |
 | GitHub Actions Runner | 2.327+ | 2.338.2 | Self-hosted, Linux x64/arm64; Node 24 actions |
