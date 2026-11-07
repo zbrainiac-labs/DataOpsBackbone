@@ -1,5 +1,5 @@
 # docker build -t brainiac/sonarqube ./sonarqube
-FROM sonarqube:26.10.0.133078-community
+FROM sonarqube:26.11.0.134175-community
 
 USER root
 
