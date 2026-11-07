@@ -77,6 +77,10 @@ on:
         type: boolean
         default: true
         description: 'Emit OpenTelemetry spans per step (only if the runner has an OTLP endpoint configured)'
+      SONAR_SCAN:
+        type: boolean
+        default: true
+        description: 'Upload the scan to SonarQube (project key = repo name) and wait for its quality gate. Set false when the caller runs its own Sonar analysis: SonarQube Community Build has no branches, so two analyses on one key overwrite each other. SQLFluff still runs.'
     secrets:
       SNOW_CONFIG_B64:
         required: true
@@ -198,12 +202,14 @@ jobs:
             "$(pwd)" "$(pwd)/sqlfluff_issues.json" "${{ inputs.SQLFLUFF_FAIL_THRESHOLD }}"
 
       - name: Run Sonar Scanner
+        if: ${{ inputs.SONAR_SCAN }}
         run: |
           set -Eeuo pipefail
           export PROJECT_VERSION="v${RELEASE_NUM}"
           otel_step scan.sonar -- bash /usr/local/bin/sonar-scan.sh
 
       - name: Wait for Quality Gate to complete
+        if: ${{ inputs.SONAR_SCAN }}
         timeout-minutes: 15
         continue-on-error: ${{ !inputs.QUALITY_GATE_ENFORCED }}
         run: |
