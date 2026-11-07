@@ -64,7 +64,39 @@ if [[ -f "pre_deploy.sql" ]]; then
 fi
 
 log_info "Step 1: Running DCM analyze..."
-snow dcm raw-analyze "$PROJECT_IDENTIFIER" -c "$CONNECTION_NAME" --target "$TARGET"
+# The CLI exits 1 on *any* analysis issue, including INFO notes such as
+# "Column lineage is not supported for streams on stages" (001662). Decide on
+# the saved result instead: fail on WARNING/ERROR (or unknown severity), or when
+# no result was written at all.
+rm -f out/compile_result.json
+ANALYZE_RC=0
+snow dcm raw-analyze "$PROJECT_IDENTIFIER" -c "$CONNECTION_NAME" --target "$TARGET" --save-output || ANALYZE_RC=$?
+if [[ ! -f out/compile_result.json ]]; then
+  log_error "DCM analyze failed (exit $ANALYZE_RC) without writing out/compile_result.json."
+  exit 1
+fi
+python3 - "$ANALYZE_RC" <<'PY'
+import json, sys
+
+def issues(node):
+    if isinstance(node, dict):
+        for key, value in node.items():
+            if key == "issues" and isinstance(value, list):
+                yield from (i for i in value if isinstance(i, dict))
+            else:
+                yield from issues(value)
+    elif isinstance(node, list):
+        for item in node:
+            yield from issues(item)
+
+found = list(issues(json.load(open("out/compile_result.json"))))
+blocking = [i for i in found if str(i.get("severity", "")).upper() != "INFO"]
+for i in found:
+    pos = i.get("source_position") or {}
+    print(f"  {i.get('severity', '?'):7} {i.get('code', '')} line {pos.get('line', '?')}: {i.get('message', '')}")
+print(f"  Analyze issues: {len(found)} total, {len(blocking)} blocking (non-INFO), CLI exit {sys.argv[1]}")
+sys.exit(1 if blocking else 0)
+PY
 log_info "Analyze completed."
 
 log_info "Step 2: Running DCM plan..."
