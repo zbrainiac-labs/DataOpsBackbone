@@ -38,8 +38,11 @@ ARG DEBIAN_FRONTEND=noninteractive
 RUN echo "🐳 Building for architecture: ${TARGETARCH}" && \
     echo "📦 Installing GitHub Actions Runner version: ${RUNNER_VERSION}"
 
-# Install required packages (Java comes from the temurin base image)
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Install required packages (Java comes from the temurin base image). The upgrade
+# picks up Ubuntu security fixes for base-image packages before the base is rebuilt
+# (Trivy blocks on HIGH/CRITICAL).
+RUN apt-get update && apt-get upgrade -y --no-install-recommends && \
+    apt-get install -y --no-install-recommends \
     unzip zip curl python3 python3-venv \
     git jq ca-certificates file \
     dumb-init sudo && \
