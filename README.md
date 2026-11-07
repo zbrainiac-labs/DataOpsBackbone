@@ -246,7 +246,9 @@ When disabled (default), quality gate failures are reported but do not block the
 If the consumer repo runs its own Sonar analysis (e.g. with tests and coverage), set `SONAR_SCAN: false`.
 SonarQube Community Build has no branch analysis, so two analyses on the same project key (the repo name)
 overwrite each other on every run. With `SONAR_SCAN: false` the scan job still runs SQLFluff
-(`sqlfluff_issues.json` in the pipeline artifacts) but skips the Sonar upload and quality gate.
+(report uploaded as the `sqlfluff-issues-<run number>` artifact) but skips the Sonar upload and quality gate.
+`QUALITY_GATE_ENFORCED` then has no effect (the scan job logs a warning); enforce the gate in your own analysis.
+Use the same SonarQube server so the custom SQL rules (`txt:`/`SQLCC:`) still apply to your project.
 To keep the SQLFluff findings in your own project, pass the report to your scanner with
 `-Dsonar.externalIssuesReportPaths=sqlfluff_issues.json` (generate it with `sqlfluff-to-sonar.sh` from the runner image).
 

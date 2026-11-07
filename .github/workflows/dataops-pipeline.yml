@@ -8,7 +8,7 @@
 #
 # Pipeline Jobs:
 #   1. prepare  — validate inputs, setup auth, pre-deploy
-#   2. scan     — dependencies, SQLFluff, SonarQube, Quality Gate
+#   2. scan     — dependencies, SQLFluff, SonarQube + Quality Gate (skipped with SONAR_SCAN: false)
 #   3. deploy   — clone (optional), DCM deploy, post-deploy, scripts
 #   4. validate — SQL validation tests
 #   5. cleanup  — drop clone schema (always runs if clone enabled)
@@ -200,6 +200,20 @@ jobs:
           set -Eeuo pipefail
           otel_step scan.sqlfluff -- bash /usr/local/bin/sqlfluff-to-sonar.sh \
             "$(pwd)" "$(pwd)/sqlfluff_issues.json" "${{ inputs.SQLFLUFF_FAIL_THRESHOLD }}"
+
+      # Runners are ephemeral: later jobs cannot see this file, so upload it here
+      - name: Upload SQLFluff report
+        if: ${{ always() && !env.ACT }}  # act's artifact server is not reachable from job containers
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: sqlfluff-issues-${{ github.run_number }}
+          retention-days: 30
+          if-no-files-found: ignore
+          path: sqlfluff_issues.json
+
+      - name: Quality gate not checked
+        if: ${{ !inputs.SONAR_SCAN && inputs.QUALITY_GATE_ENFORCED }}
+        run: echo "::warning::SONAR_SCAN is false, so QUALITY_GATE_ENFORCED has no effect; the caller's own Sonar analysis must enforce the gate"
 
       - name: Run Sonar Scanner
         if: ${{ inputs.SONAR_SCAN }}
@@ -415,7 +429,6 @@ jobs:
           if-no-files-found: ignore
           path: |
             .scannerwork/report-task.txt
-            sqlfluff_issues.json
             out/
             sqlunit/tests.rendered.sqltest
             sonar_test_report.xml
