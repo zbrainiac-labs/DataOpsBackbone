@@ -263,7 +263,7 @@
             "type": "prometheus",
             "uid": "victoriametrics"
           },
-          "expr": "histogram_quantile(0.5, sum by (le) (increase(traces_span_metrics_duration_seconds_bucket{span_name=\"pipeline\",service_name=~\"$repo\",vcs_ref=~\"$ref\",cicd_job=~\"$job\",sf_database=~\"$database\",dcm_target=~\"$target\",cicd_dry_run=~\"$dry_run\"}[$__range])))",
+          "expr": "histogram_quantile(0.5, sum by (le) (increase_pure(traces_span_metrics_duration_seconds_bucket{span_name=\"pipeline\",service_name=~\"$repo\",vcs_ref=~\"$ref\",cicd_job=~\"$job\",sf_database=~\"$database\",dcm_target=~\"$target\",cicd_dry_run=~\"$dry_run\"}[$__range])))",
           "legendFormat": "p50",
           "instant": true,
           "range": false
@@ -298,7 +298,7 @@
             "type": "prometheus",
             "uid": "victoriametrics"
           },
-          "expr": "histogram_quantile(0.95, sum by (le) (increase(traces_span_metrics_duration_seconds_bucket{span_name=\"pipeline\",service_name=~\"$repo\",vcs_ref=~\"$ref\",cicd_job=~\"$job\",sf_database=~\"$database\",dcm_target=~\"$target\",cicd_dry_run=~\"$dry_run\"}[$__range])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (increase_pure(traces_span_metrics_duration_seconds_bucket{span_name=\"pipeline\",service_name=~\"$repo\",vcs_ref=~\"$ref\",cicd_job=~\"$job\",sf_database=~\"$database\",dcm_target=~\"$target\",cicd_dry_run=~\"$dry_run\"}[$__range])))",
           "legendFormat": "p95",
           "instant": true,
           "range": false
@@ -333,7 +333,7 @@
             "type": "prometheus",
             "uid": "victoriametrics"
           },
-          "expr": "histogram_quantile(0.5, sum by (le, service_name) (increase(traces_span_metrics_duration_seconds_bucket{span_name=\"pipeline\",service_name=~\"$repo\",vcs_ref=~\"$ref\",cicd_job=~\"$job\",sf_database=~\"$database\",dcm_target=~\"$target\",cicd_dry_run=~\"$dry_run\"}[$__interval])))",
+          "expr": "histogram_quantile(0.5, sum by (le, service_name) (increase_pure(traces_span_metrics_duration_seconds_bucket{span_name=\"pipeline\",service_name=~\"$repo\",vcs_ref=~\"$ref\",cicd_job=~\"$job\",sf_database=~\"$database\",dcm_target=~\"$target\",cicd_dry_run=~\"$dry_run\"}[$__interval])))",
           "legendFormat": "{{service_name}} p50",
           "instant": false,
           "range": true
@@ -344,7 +344,7 @@
             "type": "prometheus",
             "uid": "victoriametrics"
           },
-          "expr": "histogram_quantile(0.95, sum by (le, service_name) (increase(traces_span_metrics_duration_seconds_bucket{span_name=\"pipeline\",service_name=~\"$repo\",vcs_ref=~\"$ref\",cicd_job=~\"$job\",sf_database=~\"$database\",dcm_target=~\"$target\",cicd_dry_run=~\"$dry_run\"}[$__interval])))",
+          "expr": "histogram_quantile(0.95, sum by (le, service_name) (increase_pure(traces_span_metrics_duration_seconds_bucket{span_name=\"pipeline\",service_name=~\"$repo\",vcs_ref=~\"$ref\",cicd_job=~\"$job\",sf_database=~\"$database\",dcm_target=~\"$target\",cicd_dry_run=~\"$dry_run\"}[$__interval])))",
           "legendFormat": "{{service_name}} p95",
           "instant": false,
           "range": true
@@ -444,6 +444,308 @@
       ]
     },
     {
+      "id": 9,
+      "type": "table",
+      "title": "Pipeline duration per repository (min / avg / max)",
+      "description": "Avg is exact (total duration / runs). Min and max come from the duration histogram buckets (1s ... 2h): min is the lower edge of the fastest run's bucket, max the upper edge of the slowest run's bucket. Exact values: Traces report.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 21,
+        "w": 10,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "sum by (service_name) (increase_pure(traces_span_metrics_duration_seconds_count{span_name=\"pipeline\",service_name=~\"$repo\",vcs_ref=~\"$ref\",cicd_job=~\"$job\",sf_database=~\"$database\",dcm_target=~\"$target\",cicd_dry_run=~\"$dry_run\"}[$__range]))",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "histogram_quantile(0, sum by (le, service_name) (increase_pure(traces_span_metrics_duration_seconds_bucket{span_name=\"pipeline\",service_name=~\"$repo\",vcs_ref=~\"$ref\",cicd_job=~\"$job\",sf_database=~\"$database\",dcm_target=~\"$target\",cicd_dry_run=~\"$dry_run\"}[$__range])))",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "sum by (service_name) (increase_pure(traces_span_metrics_duration_seconds_sum{span_name=\"pipeline\",service_name=~\"$repo\",vcs_ref=~\"$ref\",cicd_job=~\"$job\",sf_database=~\"$database\",dcm_target=~\"$target\",cicd_dry_run=~\"$dry_run\"}[$__range])) / sum by (service_name) (increase_pure(traces_span_metrics_duration_seconds_count{span_name=\"pipeline\",service_name=~\"$repo\",vcs_ref=~\"$ref\",cicd_job=~\"$job\",sf_database=~\"$database\",dcm_target=~\"$target\",cicd_dry_run=~\"$dry_run\"}[$__range]))",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "histogram_quantile(1, sum by (le, service_name) (increase_pure(traces_span_metrics_duration_seconds_bucket{span_name=\"pipeline\",service_name=~\"$repo\",vcs_ref=~\"$ref\",cicd_job=~\"$job\",sf_database=~\"$database\",dcm_target=~\"$target\",cicd_dry_run=~\"$dry_run\"}[$__range])))",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "labelsToFields",
+          "options": {
+            "mode": "columns"
+          }
+        },
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "indexByName": {
+              "service_name": 0,
+              "Value #A": 1,
+              "Value #B": 2,
+              "Value #C": 3,
+              "Value #D": 4
+            },
+            "renameByName": {
+              "service_name": "Repository",
+              "Value #A": "Runs",
+              "Value #B": "Min (bucket, ≥)",
+              "Value #C": "Avg (exact)",
+              "Value #D": "Max (bucket, ≤)"
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 1
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Runs"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "Avg (exact)",
+            "desc": true
+          }
+        ]
+      }
+    },
+    {
+      "id": 10,
+      "type": "barchart",
+      "title": "Pipeline duration per repository (min / avg / max)",
+      "description": "Avg is exact (total duration / runs). Min and max come from the duration histogram buckets (1s ... 2h): min is the lower edge of the fastest run's bucket, max the upper edge of the slowest run's bucket. Exact values: Traces report.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics"
+      },
+      "gridPos": {
+        "x": 10,
+        "y": 21,
+        "w": 14,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "histogram_quantile(0, sum by (le, service_name) (increase_pure(traces_span_metrics_duration_seconds_bucket{span_name=\"pipeline\",service_name=~\"$repo\",vcs_ref=~\"$ref\",cicd_job=~\"$job\",sf_database=~\"$database\",dcm_target=~\"$target\",cicd_dry_run=~\"$dry_run\"}[$__range])))",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "sum by (service_name) (increase_pure(traces_span_metrics_duration_seconds_sum{span_name=\"pipeline\",service_name=~\"$repo\",vcs_ref=~\"$ref\",cicd_job=~\"$job\",sf_database=~\"$database\",dcm_target=~\"$target\",cicd_dry_run=~\"$dry_run\"}[$__range])) / sum by (service_name) (increase_pure(traces_span_metrics_duration_seconds_count{span_name=\"pipeline\",service_name=~\"$repo\",vcs_ref=~\"$ref\",cicd_job=~\"$job\",sf_database=~\"$database\",dcm_target=~\"$target\",cicd_dry_run=~\"$dry_run\"}[$__range]))",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "histogram_quantile(1, sum by (le, service_name) (increase_pure(traces_span_metrics_duration_seconds_bucket{span_name=\"pipeline\",service_name=~\"$repo\",vcs_ref=~\"$ref\",cicd_job=~\"$job\",sf_database=~\"$database\",dcm_target=~\"$target\",cicd_dry_run=~\"$dry_run\"}[$__range])))",
+          "instant": true,
+          "range": false,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "labelsToFields",
+          "options": {
+            "mode": "columns"
+          }
+        },
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "indexByName": {
+              "service_name": 0,
+              "Value #B": 1,
+              "Value #C": 2,
+              "Value #D": 3
+            },
+            "renameByName": {
+              "service_name": "Repository",
+              "Value #B": "Min (bucket)",
+              "Value #C": "Avg (exact)",
+              "Value #D": "Max (bucket)"
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "sort": [
+              {
+                "field": "Avg (exact)",
+                "desc": true
+              }
+            ]
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "fillOpacity": 80,
+            "lineWidth": 0,
+            "axisSoftMin": 0
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Min (bucket)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "green"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Avg (exact)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "blue"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Max (bucket)"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "orange"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "xField": "Repository",
+        "orientation": "horizontal",
+        "groupWidth": 0.8,
+        "barWidth": 0.9,
+        "showValue": "never",
+        "stacking": "none",
+        "xTickLabelMaxLength": 24,
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
       "id": 8,
       "title": "Latest pipeline runs (click a trace ID for the waterfall)",
       "type": "table",
@@ -453,7 +755,7 @@
       },
       "gridPos": {
         "x": 0,
-        "y": 21,
+        "y": 30,
         "w": 24,
         "h": 9
       },

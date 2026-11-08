@@ -67,7 +67,7 @@ Variables on every report: `repo`, `ref`, `job`, `database`, `target`, `dry_run`
 
 ![Pipeline overview](../images/grafana_pipeline_overview.png)
 
-1. **Pipeline overview** (home dashboard): runs, success rate and median duration; p50/p95 per repo over time; runs per repo by result; latest runs with a link to the waterfall.
+1. **Pipeline overview** (home dashboard): runs, success rate and median duration; p50/p95 per repo over time; runs per repo by result; min / avg / max duration per repo (avg exact, min/max are histogram bucket edges; exact values in the Traces report); latest runs with a link to the waterfall.
 2. **Jobs and steps**: p95 per job; the 10 slowest steps; failure rate per step; queue time per job (GitHub runs only); step duration per database/target.
 3. **Traces**: the Jaeger search fields plus the waterfall.
 
@@ -94,6 +94,8 @@ Per-run values (`cicd.pipeline.run.id`, `cicd.worker.name`, `cicd.job.queue_seco
 ## Behaviour and versions
 
 - Fail-open: a stopped collector or backend never fails a step. `./start.sh` only warns when a health check fails.
+- Service and operation dropdowns (Grafana Explore, VictoriaTraces UI) list only what was seen in the last 30 days (`-search.streamFieldsLookbehind=720h`); older traces are kept for the full retention and can still be searched by service name and a wider time range.
+- The VictoriaTraces UI opens on the last 5 minutes and has no setting to change that. Open it with this link instead, which starts on the last 7 days (`./start.sh` prints it too): http://127.0.0.1:10428/select/vmui/?#/?g0.range_input=7d&g0.relative_time=last_7_days&limit=5000
 - Disable per consumer with the workflow input `OTEL_ENABLED: false`.
 - `local-ci/run.sh` sends traces automatically when `otel-collector` is running.
 - VictoriaTraces is pre-1.0: the image is pinned, and every bump (Dependabot) must pass `local-ci/observability-smoke.sh`. Grafana majors are upgraded manually. The collector stays in front so the trace backend can be swapped without touching the runners.

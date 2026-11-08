@@ -177,7 +177,7 @@
             "type": "prometheus",
             "uid": "victoriametrics"
           },
-          "expr": "histogram_quantile(0.95, sum by (le, cicd_job) (increase(traces_span_metrics_duration_seconds_bucket{span_name=~\"job .*\",service_name=~\"$repo\",vcs_ref=~\"$ref\",cicd_job=~\"$job\",sf_database=~\"$database\",dcm_target=~\"$target\",cicd_dry_run=~\"$dry_run\"}[$__range])))",
+          "expr": "histogram_quantile(0.95, sum by (le, cicd_job) (increase_pure(traces_span_metrics_duration_seconds_bucket{span_name=~\"job .*\",service_name=~\"$repo\",vcs_ref=~\"$ref\",cicd_job=~\"$job\",sf_database=~\"$database\",dcm_target=~\"$target\",cicd_dry_run=~\"$dry_run\"}[$__range])))",
           "legendFormat": "{{cicd_job}}",
           "instant": true,
           "range": false
@@ -214,7 +214,7 @@
             "type": "prometheus",
             "uid": "victoriametrics"
           },
-          "expr": "topk(10, histogram_quantile(0.95, sum by (le, span_name) (increase(traces_span_metrics_duration_seconds_bucket{span_name!~\"pipeline|job .*|queue .*\",service_name=~\"$repo\",vcs_ref=~\"$ref\",cicd_job=~\"$job\",sf_database=~\"$database\",dcm_target=~\"$target\",cicd_dry_run=~\"$dry_run\"}[$__range]))))",
+          "expr": "topk(10, histogram_quantile(0.95, sum by (le, span_name) (increase_pure(traces_span_metrics_duration_seconds_bucket{span_name!~\"pipeline|job .*|queue .*\",service_name=~\"$repo\",vcs_ref=~\"$ref\",cicd_job=~\"$job\",sf_database=~\"$database\",dcm_target=~\"$target\",cicd_dry_run=~\"$dry_run\"}[$__range]))))",
           "legendFormat": "{{span_name}}",
           "instant": true,
           "range": false
@@ -288,7 +288,7 @@
             "type": "prometheus",
             "uid": "victoriametrics"
           },
-          "expr": "histogram_quantile(0.95, sum by (le, span_name) (increase(traces_span_metrics_duration_seconds_bucket{span_name=~\"queue .*\",service_name=~\"$repo\",vcs_ref=~\"$ref\",cicd_job=~\"$job\",sf_database=~\"$database\",dcm_target=~\"$target\",cicd_dry_run=~\"$dry_run\"}[$__range])))",
+          "expr": "histogram_quantile(0.95, sum by (le, span_name) (increase_pure(traces_span_metrics_duration_seconds_bucket{span_name=~\"queue .*\",service_name=~\"$repo\",vcs_ref=~\"$ref\",cicd_job=~\"$job\",sf_database=~\"$database\",dcm_target=~\"$target\",cicd_dry_run=~\"$dry_run\"}[$__range])))",
           "legendFormat": "{{span_name}}",
           "instant": true,
           "range": false
@@ -325,7 +325,7 @@
             "type": "prometheus",
             "uid": "victoriametrics"
           },
-          "expr": "sum by (sf_database, dcm_target) (increase(traces_span_metrics_duration_seconds_sum{span_name!~\"pipeline|job .*|queue .*\",service_name=~\"$repo\",vcs_ref=~\"$ref\",cicd_job=~\"$job\",sf_database=~\"$database\",dcm_target=~\"$target\",cicd_dry_run=~\"$dry_run\"}[$__interval])) / sum by (sf_database, dcm_target) (increase(traces_span_metrics_duration_seconds_count{span_name!~\"pipeline|job .*|queue .*\",service_name=~\"$repo\",vcs_ref=~\"$ref\",cicd_job=~\"$job\",sf_database=~\"$database\",dcm_target=~\"$target\",cicd_dry_run=~\"$dry_run\"}[$__interval]))",
+          "expr": "sum by (sf_database, dcm_target) (increase_pure(traces_span_metrics_duration_seconds_sum{span_name!~\"pipeline|job .*|queue .*\",service_name=~\"$repo\",vcs_ref=~\"$ref\",cicd_job=~\"$job\",sf_database=~\"$database\",dcm_target=~\"$target\",cicd_dry_run=~\"$dry_run\"}[$__interval])) / sum by (sf_database, dcm_target) (increase_pure(traces_span_metrics_duration_seconds_count{span_name!~\"pipeline|job .*|queue .*\",service_name=~\"$repo\",vcs_ref=~\"$ref\",cicd_job=~\"$job\",sf_database=~\"$database\",dcm_target=~\"$target\",cicd_dry_run=~\"$dry_run\"}[$__interval]))",
           "legendFormat": "{{sf_database}} {{dcm_target}}",
           "instant": false,
           "range": true
