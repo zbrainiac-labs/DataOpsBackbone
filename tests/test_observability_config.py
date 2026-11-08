@@ -61,6 +61,12 @@ def test_grafana_password_required(compose: dict[str, Any]) -> None:
     assert re.fullmatch(r"\$\{GRAFANA_ADMIN_PASSWORD:\?[^}]*\}", value), value
 
 
+def test_service_list_covers_report_range(compose: dict[str, Any]) -> None:
+    # Default 72h hides repos without a recent run from the service/operation dropdowns
+    flags = compose["services"]["victoriatraces"]["command"]
+    assert "-search.streamFieldsLookbehind=720h" in flags
+
+
 def test_runner_default_endpoint(compose: dict[str, Any]) -> None:
     runners = [s for s in compose["services"].values() if "OTEL_EXPORTER_OTLP_ENDPOINT" in s.get("environment", {})]
     assert runners

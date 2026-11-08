@@ -125,6 +125,10 @@ services:
       - -storageDataPath=/storage
       - -retentionPeriod=${OBSERVABILITY_RETENTION:-365d}
       - -retention.maxDiskSpaceUsageBytes=${OBSERVABILITY_MAX_DISK:-20GiB}
+      # Service/operation dropdowns (Jaeger /api/services, .../operations) only list
+      # what was seen in this window (default 72h); match the reports' 30-day range.
+      # Go duration, so no "d" unit: 720h = 30 days.
+      - -search.streamFieldsLookbehind=720h
     ports:
       - "127.0.0.1:10428:10428"
     volumes:
