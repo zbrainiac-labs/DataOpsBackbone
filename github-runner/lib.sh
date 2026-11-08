@@ -35,9 +35,15 @@ die() { log_error "$1"; exit "${2:-1}"; }
 
 # retry [-n attempts] cmd...  -- linear backoff (10s, 20s, ...)
 retry() {
-  local attempts=3 n=0
+  local attempts=3 n=0 rc
   if [[ "${1:-}" == "-n" ]]; then attempts=$2; shift 2; fi
   until "$@"; do
+    rc=$?
+    # 65 (EX_DATAERR) = invalid input, e.g. DCM definitions: same result every time
+    if (( rc == 65 )); then
+      log_error "Not retrying (exit 65, invalid input): $*"
+      return 65
+    fi
     n=$((n + 1))
     if (( n >= attempts )); then
       log_error "Failed after ${attempts} attempts: $*"
