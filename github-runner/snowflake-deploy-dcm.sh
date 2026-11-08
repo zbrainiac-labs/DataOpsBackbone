@@ -67,36 +67,29 @@ log_info "Step 1: Running DCM analyze..."
 # The CLI exits 1 on *any* analysis issue, including INFO notes such as
 # "Column lineage is not supported for streams on stages" (001662). Decide on
 # the saved result instead: fail on WARNING/ERROR (or unknown severity), or when
-# no result was written at all.
+# no result was written at all. The CLI also prints the whole result as one
+# ~1 MB line, which GitHub's log drops; keep it in out/analyze.log instead.
 rm -f out/compile_result.json
+mkdir -p out
 ANALYZE_RC=0
-snow dcm raw-analyze "$PROJECT_IDENTIFIER" -c "$CONNECTION_NAME" --target "$TARGET" --save-output || ANALYZE_RC=$?
+snow dcm raw-analyze "$PROJECT_IDENTIFIER" -c "$CONNECTION_NAME" --target "$TARGET" --save-output \
+  > out/analyze.log 2>&1 || ANALYZE_RC=$?
 if [[ ! -f out/compile_result.json ]]; then
-  log_error "DCM analyze failed (exit $ANALYZE_RC) without writing out/compile_result.json."
+  log_error "DCM analyze failed (exit $ANALYZE_RC) without writing out/compile_result.json:"
+  tail -c 4000 out/analyze.log >&2
   exit 1
 fi
-python3 - "$ANALYZE_RC" <<'PY'
-import json, sys
-
-def issues(node):
-    if isinstance(node, dict):
-        for key, value in node.items():
-            if key == "issues" and isinstance(value, list):
-                yield from (i for i in value if isinstance(i, dict))
-            else:
-                yield from issues(value)
-    elif isinstance(node, list):
-        for item in node:
-            yield from issues(item)
-
-found = list(issues(json.load(open("out/compile_result.json"))))
-blocking = [i for i in found if str(i.get("severity", "")).upper() != "INFO"]
-for i in found:
-    pos = i.get("source_position") or {}
-    print(f"  {i.get('severity', '?'):7} {i.get('code', '')} line {pos.get('line', '?')}: {i.get('message', '')}")
-print(f"  Analyze issues: {len(found)} total, {len(blocking)} blocking (non-INFO), CLI exit {sys.argv[1]}")
-sys.exit(1 if blocking else 0)
-PY
+SUMMARY="$(dirname "${BASH_SOURCE[0]}")/dcm_analyze_summary.py"
+[[ -f "$SUMMARY" ]] || SUMMARY=/usr/local/bin/dcm_analyze_summary.py
+SUMMARY_RC=0
+python3 "$SUMMARY" out/compile_result.json "$ANALYZE_RC" || SUMMARY_RC=$?
+if (( SUMMARY_RC == 65 )); then
+  # Invalid definitions fail the same way every time: tell `retry` not to repeat
+  log_error "DCM analyze found blocking issues (see above / annotations; full result in out/compile_result.json)."
+  exit 65
+elif (( SUMMARY_RC != 0 )); then
+  exit 1
+fi
 log_info "Analyze completed."
 
 log_info "Step 2: Running DCM plan..."

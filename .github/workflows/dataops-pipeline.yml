@@ -279,6 +279,15 @@ jobs:
             --TARGET="$DCM_TARGET" --ALIAS="release-${RELEASE_NUM}-${GITHUB_RUN_ATTEMPT}" \
             --PROJECT_DIR="${WORK_DIR:-$(pwd)}"
 
+      - name: Upload DCM analyze/plan result
+        if: ${{ failure() && !env.ACT }}  # act's artifact server is not reachable from job containers
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: dcm-deploy-${{ github.run_number }}-${{ github.run_attempt }}
+          retention-days: 30
+          if-no-files-found: ignore
+          path: ${{ env.WORK_DIR || '.' }}/out/
+
       - name: Render and execute post_deploy.sql
         run: |
           set -Eeuo pipefail
