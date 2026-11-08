@@ -86,6 +86,8 @@ if [[ "$OBSERVABILITY" == true ]]; then
   # Warn only: tracing is fail-open, pipelines run without the backends
   bash local-ci/observability-smoke.sh --quick || true
   echo "Observability: Grafana on http://localhost:3000 (folder DataOps)"
+  # The UI has no default-range setting (opens on 5 minutes); the link carries 7 days
+  echo "Traces UI (last 7 days): http://127.0.0.1:10428/select/vmui/?#/?g0.range_input=7d&g0.relative_time=last_7_days&limit=5000"
 else
   echo "Observability disabled"
 fi
