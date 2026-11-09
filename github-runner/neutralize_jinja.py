@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Make DCM SQL parseable for SonarQube's AST-based SQL Code Checker (SQLCC).
+r"""Make DCM SQL parseable for SonarQube's AST-based SQL Code Checker (SQLCC).
 
 DCM definitions use Jinja (``{{ db }}.{{ schema }}.T``, ``{% if %}``). The
 gretard/sonar-sql-plugin cannot parse it and reports false positives such as
@@ -46,8 +46,7 @@ def neutralize(text: str) -> str:
 
 def is_dcm_project(root: Path) -> bool:
     manifest = root / "manifest.yml"
-    return manifest.is_file() and re.search(
-        r"^type:\s*['\"]?DCM_PROJECT", manifest.read_text(), re.M) is not None
+    return manifest.is_file() and re.search(r"^type:\s*['\"]?DCM_PROJECT", manifest.read_text(), re.M) is not None
 
 
 def run(root: Path) -> int:

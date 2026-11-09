@@ -67,7 +67,9 @@ def test_dcm_project_rewrites_sql_and_skips_out(tmp_path: Path):
 
 def test_txt_prefix_rule_does_not_see_a_literal_prefix():
     # sonar-rules-setup.sh: Disallow_CREATE_statements_with_hardcoded_database_or_schema_prefix
-    prefix_rule = re.compile(r"(?i)^(?!\s*--)\s*create\s+(or\s+replace\s+)?(table|view|schema)\s+"
-                             r"(if\s+not\s+exists\s+)?[a-z0-9_]+\.[a-z0-9_]+(\.[a-z0-9_]+)?")
+    prefix_rule = re.compile(
+        r"(?i)^(?!\s*--)\s*create\s+(or\s+replace\s+)?(table|view|schema)\s+"
+        r"(if\s+not\s+exists\s+)?[a-z0-9_]+\.[a-z0-9_]+(\.[a-z0-9_]+)?"
+    )
     sql = "CREATE SCHEMA IF NOT EXISTS {{ db }}.{{ schema }};"
     assert not prefix_rule.search(neutralize(sql))
