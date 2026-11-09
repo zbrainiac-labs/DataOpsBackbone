@@ -51,6 +51,12 @@ Each rule runs in **exactly one tool** to avoid double-counting:
 | C022 | Non-materialised view |
 | C023 | Cartesian join |
 
+**DCM projects with Jinja** (`manifest.yml` with `type: DCM_PROJECT`): the SQL Code Checker cannot parse
+`{{ ... }}` / `{% ... %}`, which caused false positives such as C003 on INSERTs that do list their columns
+([#45](https://github.com/zbrainiac-labs/DataOpsBackbone/issues/45)). `sonar-scan.sh` therefore scans a copy
+neutralized by `neutralize_jinja.py`: `{{ db }}.{{ schema }}.T` becomes `JINJA_DB.JINJA_SCHEMA.T` and
+`{% ... %}` / `{# ... #}` are blanked. Paths and line numbers are unchanged; the checkout is never modified.
+
 #### SQLFluff (external issues in SonarQube) — 23 AST-based rules, excludes `sources/definitions/`
 
 | Rule | Description | Severity |

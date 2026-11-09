@@ -62,9 +62,25 @@ fi
 
 log_info "Running sonar-scanner..."
 PROJECT_VERSION="${PROJECT_VERSION:-$(git -C "$PROJECT_BASE_DIR" describe --tags --always 2>/dev/null || echo 'unknown')}"
+
+# DCM projects: scan a copy with Jinja placeholders neutralized so the AST-based
+# SQL Code Checker can parse it (#45). The checkout itself is never modified
+# (under act it can be the developer's working copy); report-task.txt is copied
+# back for sonar-quality-gate.sh. File paths and line numbers are unchanged.
+SCAN_DIR="$PROJECT_BASE_DIR"
+NEUTRALIZE="$(dirname "${BASH_SOURCE[0]}")/neutralize_jinja.py"
+[[ -f "$NEUTRALIZE" ]] || NEUTRALIZE=/usr/local/bin/neutralize_jinja.py
+if grep -qsE "^type:[[:space:]]*['\"]?DCM_PROJECT" "$PROJECT_BASE_DIR/manifest.yml" && [[ -f "$NEUTRALIZE" ]]; then
+  SCAN_DIR=$(mktemp -d)
+  trap 'rm -rf "$SCAN_DIR"' EXIT
+  tar -C "$PROJECT_BASE_DIR" --exclude=./.git --exclude=./.scannerwork --exclude=./node_modules -cf - . | tar -C "$SCAN_DIR" -xf -
+  log_info "DCM project: $(python3 "$NEUTRALIZE" "$SCAN_DIR")"
+  EXTRA_ARGS=("${EXTRA_ARGS[@]//$PROJECT_BASE_DIR/$SCAN_DIR}")
+fi
+
 "$SONAR_SCANNER" \
   -Dsonar.projectKey="$PROJECT_KEY" \
-  -Dsonar.projectBaseDir="$PROJECT_BASE_DIR" \
+  -Dsonar.projectBaseDir="$SCAN_DIR" \
   -Dsonar.projectVersion="$PROJECT_VERSION" \
   -Dsonar.host.url="$SONAR_HOST" \
   -Dsonar.scm.disabled=true \
@@ -74,3 +90,8 @@ PROJECT_VERSION="${PROJECT_VERSION:-$(git -C "$PROJECT_BASE_DIR" describe --tags
   -Dsonar.sourceEncoding="UTF-8" \
   "${EXTRA_ARGS[@]}" \
   -Dsonar.token="$SONAR_TOKEN"
+
+if [[ "$SCAN_DIR" != "$PROJECT_BASE_DIR" && -d "$SCAN_DIR/.scannerwork" ]]; then
+  rm -rf "$PROJECT_BASE_DIR/.scannerwork"
+  cp -R "$SCAN_DIR/.scannerwork" "$PROJECT_BASE_DIR/.scannerwork"
+fi
