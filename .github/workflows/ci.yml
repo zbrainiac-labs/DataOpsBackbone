@@ -76,6 +76,9 @@ jobs:
           cache-to: type=gha,scope=sonarqube-amd64,mode=max
       - name: Trivy scan runner (blocking)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
+        env:
+          # scoped + time-boxed exceptions only, see the file header
+          TRIVY_IGNOREFILE: .trivyignore.yaml
         with:
           image-ref: ${{ env.RUNNER_IMAGE }}:latest
           severity: CRITICAL,HIGH
