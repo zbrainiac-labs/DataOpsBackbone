@@ -79,6 +79,11 @@ for path in sorted(glob.glob(f"{project}/.github/workflows/*.y*ml")):
     for job in (wf.get("jobs") or {}).values():
         if "dataops-pipeline.yml" in str(job.get("uses", "")):
             job["with"] = {**job.get("with", {}), "DRY_RUN": dry_run, "USE_OIDC": False}
+            # The caller below has only this job: needs/if pointing at the project's
+            # other jobs (e.g. sonar, image) would leave act with nothing to run
+            dropped = [k for k in ("needs", "if") if job.pop(k, None) is not None]
+            if dropped:
+                print(f"Ignoring {'/'.join(dropped)} of the caller job (other jobs are not simulated)")
             caller = {"name": "local-ci", "on": {"workflow_dispatch": {}},
                       "permissions": wf.get("permissions", {}), "jobs": {"pipeline": job}}
             yaml.safe_dump(caller, open(out, "w"), sort_keys=False)

@@ -111,6 +111,8 @@ jobs:
   # JOB 1: PREPARE — validate, auth, pre-deploy
   # ============================================================
   prepare:
+    # self-hosted runners: never run code from a fork pull request (skips all later jobs)
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
     runs-on: self-hosted
     timeout-minutes: 10
     outputs:
@@ -368,7 +370,7 @@ jobs:
   # ============================================================
   cleanup:
     needs: [deploy, validate]  # never drop the clone while tests still run against it
-    if: ${{ always() && inputs.CLONE_PER_BUILD && !inputs.DRY_RUN }}
+    if: ${{ always() && inputs.CLONE_PER_BUILD && !inputs.DRY_RUN && needs.deploy.result != 'skipped' }}
     runs-on: self-hosted
     timeout-minutes: 10
     steps:
@@ -486,7 +488,7 @@ jobs:
   # ============================================================
   finish:
     needs: [prepare, scan, deploy, validate, cleanup, release]
-    if: ${{ always() && inputs.OTEL_ENABLED }}
+    if: ${{ always() && inputs.OTEL_ENABLED && needs.prepare.result != 'skipped' }}
     runs-on: self-hosted
     timeout-minutes: 5
     steps:
