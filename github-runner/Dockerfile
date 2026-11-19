@@ -10,7 +10,7 @@
 # Build Go tools from source with a current toolchain: the released binaries
 # are compiled with old Go/x/net versions that Trivy flags. Runs on the build
 # host's platform and cross-compiles for the target (no emulation).
-FROM --platform=$BUILDPLATFORM golang:1.27.3-trixie AS gotools
+FROM --platform=$BUILDPLATFORM golang:1.27.4-trixie AS gotools
 ARG TARGETOS
 ARG TARGETARCH
 ARG YQ_VERSION=v4.54.1
@@ -92,8 +92,8 @@ RUN python3 -m venv "$VIRTUAL_ENV" && \
 
 # Local CI support (local-ci/run.sh): node on PATH for JS actions under act,
 # plus act and the docker CLI so this image can also serve the local-ci service
-ARG ACT_VERSION=0.2.94
-ARG DOCKER_CLI_VERSION=29.9.2
+ARG ACT_VERSION=0.2.98
+ARG DOCKER_CLI_VERSION=29.10.0
 RUN set -eux; \
   ln -sf /home/docker/actions-runner/externals/node24/bin/node /usr/local/bin/node; \
   if [ "${TARGETARCH}" = "arm64" ]; then ACT_ARCH=arm64; DOCKER_ARCH=aarch64; else ACT_ARCH=x86_64; DOCKER_ARCH=x86_64; fi; \
