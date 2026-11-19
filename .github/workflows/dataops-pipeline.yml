@@ -91,6 +91,10 @@ concurrency:
 
 env:
   PROJECT_KEY: ${{ github.event.repository.name }}
+  # one Sonar project per stream (Community Build has no PR analysis): PR scans
+  # must not overwrite the main record
+  SONAR_PROJECT_KEY: ${{ github.event_name == 'pull_request' && format('{0}-local-pr', github.event.repository.name) || github.event.repository.name }}
+  SONAR_PROJECT_NAME: ${{ github.event_name == 'pull_request' && format('{0} (pull requests)', github.event.repository.name) || github.event.repository.name }}
   RELEASE_NUM: ${{ github.run_number }}
   SONAR_BRANCH_NAME: ${{ github.ref_name }}
   SONAR_HOST: http://sonarqube:9000
@@ -127,7 +131,7 @@ jobs:
         run: |
           set -Eeuo pipefail
           echo "pipeline_start=$(date +%s%N)" >> "$GITHUB_OUTPUT"
-          echo "Project: $PROJECT_KEY | Branch: $SONAR_BRANCH_NAME | Release #: $RELEASE_NUM"
+          echo "Project: $PROJECT_KEY | Sonar: $SONAR_PROJECT_KEY | Branch: $SONAR_BRANCH_NAME | Release #: $RELEASE_NUM"
           echo "DCM Project: $DCM_PROJECT_IDENTIFIER | Database: $SOURCE_DATABASE | Schema: $SOURCE_SCHEMA"
           echo "DRY_RUN: ${{ inputs.DRY_RUN }} | OTEL: $OTEL_ENABLED (endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:-none})"
 
@@ -151,7 +155,7 @@ jobs:
 
       - name: Setup Snowflake connection
         id: sf
-        uses: zbrainiac-labs/DataOpsBackbone/.github/actions/snowflake-connect@main
+        uses: zbrainiac-labs/DataOpsBackbone/.github/actions/snowflake-connect@v1
         with:
           use_oidc: ${{ inputs.USE_OIDC }}
           snowflake_account: ${{ inputs.SNOWFLAKE_ACCOUNT }}
@@ -185,7 +189,7 @@ jobs:
           fetch-depth: 0
 
       - name: Setup Snowflake connection
-        uses: zbrainiac-labs/DataOpsBackbone/.github/actions/snowflake-connect@main
+        uses: zbrainiac-labs/DataOpsBackbone/.github/actions/snowflake-connect@v1
         with:
           use_oidc: ${{ inputs.USE_OIDC }}
           snowflake_account: ${{ inputs.SNOWFLAKE_ACCOUNT }}
@@ -257,7 +261,7 @@ jobs:
           fetch-depth: 0
 
       - name: Setup Snowflake connection
-        uses: zbrainiac-labs/DataOpsBackbone/.github/actions/snowflake-connect@main
+        uses: zbrainiac-labs/DataOpsBackbone/.github/actions/snowflake-connect@v1
         with:
           use_oidc: ${{ inputs.USE_OIDC }}
           snowflake_account: ${{ inputs.SNOWFLAKE_ACCOUNT }}
@@ -331,7 +335,7 @@ jobs:
           fetch-depth: 0
 
       - name: Setup Snowflake connection
-        uses: zbrainiac-labs/DataOpsBackbone/.github/actions/snowflake-connect@main
+        uses: zbrainiac-labs/DataOpsBackbone/.github/actions/snowflake-connect@v1
         with:
           use_oidc: ${{ inputs.USE_OIDC }}
           snowflake_account: ${{ inputs.SNOWFLAKE_ACCOUNT }}
@@ -381,7 +385,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
 
       - name: Setup Snowflake connection
-        uses: zbrainiac-labs/DataOpsBackbone/.github/actions/snowflake-connect@main
+        uses: zbrainiac-labs/DataOpsBackbone/.github/actions/snowflake-connect@v1
         with:
           use_oidc: ${{ inputs.USE_OIDC }}
           snowflake_account: ${{ inputs.SNOWFLAKE_ACCOUNT }}
@@ -417,7 +421,7 @@ jobs:
           fetch-depth: 0
 
       - name: Setup Snowflake connection
-        uses: zbrainiac-labs/DataOpsBackbone/.github/actions/snowflake-connect@main
+        uses: zbrainiac-labs/DataOpsBackbone/.github/actions/snowflake-connect@v1
         with:
           use_oidc: ${{ inputs.USE_OIDC }}
           snowflake_account: ${{ inputs.SNOWFLAKE_ACCOUNT }}

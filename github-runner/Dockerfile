@@ -4,17 +4,18 @@
 #   OTEL_CLI_VERSION  https://github.com/equinix-labs/otel-cli/releases
 #   RUNNER_VERSION    https://github.com/actions/runner/releases
 #   sonar-scanner-cli https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/
-#   ACT_VERSION       https://github.com/nektos/act/releases
+#   ACT_VERSION       https://github.com/nektos/act/releases (built from source)
 #   DOCKER_CLI_VERSION https://download.docker.com/linux/static/stable/
 
 # Build Go tools from source with a current toolchain: the released binaries
 # are compiled with old Go/x/net versions that Trivy flags. Runs on the build
 # host's platform and cross-compiles for the target (no emulation).
-FROM --platform=$BUILDPLATFORM golang:1.27.3-trixie AS gotools
+FROM --platform=$BUILDPLATFORM golang:1.27.4-trixie AS gotools
 ARG TARGETOS
 ARG TARGETARCH
 ARG YQ_VERSION=v4.54.1
 ARG OTEL_CLI_VERSION=v0.4.5
+ARG ACT_VERSION=v0.2.98
 ENV CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH}
 RUN set -eux; \
   git clone --depth 1 --branch "${YQ_VERSION}" https://github.com/mikefarah/yq /src/yq; \
@@ -24,7 +25,10 @@ RUN set -eux; \
   git clone --depth 1 --branch "${OTEL_CLI_VERSION}" https://github.com/equinix-labs/otel-cli /src/otel-cli; \
   cd /src/otel-cli; \
   go get -u ./... && go mod tidy; \
-  go build -trimpath -ldflags="-s -w" -o /out/otel-cli .
+  go build -trimpath -ldflags="-s -w" -o /out/otel-cli .; \
+  git clone --depth 1 --branch "${ACT_VERSION}" https://github.com/nektos/act /src/act; \
+  cd /src/act; \
+  go build -trimpath -ldflags="-s -w -X main.version=${ACT_VERSION#v}" -o /out/act .
 
 # Base image
 FROM eclipse-temurin:21.0.13_9-jre-resolute
@@ -46,8 +50,10 @@ RUN apt-get update && apt-get upgrade -y --no-install-recommends && \
     unzip zip curl python3 python3-venv \
     git jq ca-certificates file \
     dumb-init sudo && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
-COPY --from=gotools /out/yq /out/otel-cli /usr/local/bin/
+    apt-get clean && rm -rf /var/lib/apt/lists/* && \
+    # Ubuntu base ships Pebble outside dpkg (no apt fix, unused: dumb-init entrypoint)
+    rm -rf /usr/bin/pebble /var/lib/pebble
+COPY --from=gotools /out/yq /out/otel-cli /out/act /usr/local/bin/
 
 
 # Sonar Scanner, docker user, and the GitHub Actions runner (TARGETARCH arm64/amd64 -> arm64/x64)
@@ -91,14 +97,11 @@ RUN python3 -m venv "$VIRTUAL_ENV" && \
     chown -R docker "$VIRTUAL_ENV"
 
 # Local CI support (local-ci/run.sh): node on PATH for JS actions under act,
-# plus act and the docker CLI so this image can also serve the local-ci service
-ARG ACT_VERSION=0.2.94
-ARG DOCKER_CLI_VERSION=29.9.2
+# plus the docker CLI so this image can also serve the local-ci service (act: gotools stage)
+ARG DOCKER_CLI_VERSION=29.10.0
 RUN set -eux; \
   ln -sf /home/docker/actions-runner/externals/node24/bin/node /usr/local/bin/node; \
-  if [ "${TARGETARCH}" = "arm64" ]; then ACT_ARCH=arm64; DOCKER_ARCH=aarch64; else ACT_ARCH=x86_64; DOCKER_ARCH=x86_64; fi; \
-  curl -fsSL "https://github.com/nektos/act/releases/download/v${ACT_VERSION}/act_Linux_${ACT_ARCH}.tar.gz" \
-    | tar -xz -C /usr/local/bin act; \
+  if [ "${TARGETARCH}" = "arm64" ]; then DOCKER_ARCH=aarch64; else DOCKER_ARCH=x86_64; fi; \
   curl -fsSL "https://download.docker.com/linux/static/stable/${DOCKER_ARCH}/docker-${DOCKER_CLI_VERSION}.tgz" \
     | tar -xz -C /usr/local/bin --strip-components=1 docker/docker
 
