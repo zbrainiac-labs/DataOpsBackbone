@@ -1,0 +1,12 @@
+# Trivy ignore list for the blocking runner image scan (.github/workflows/ci.yml).
+# Keep every entry scoped (id + path) and time-boxed (expired_at): an expired
+# entry fails the scan again.
+vulnerabilities:
+  - id: CVE-2026-114149
+    paths:
+      - home/docker/actions-runner/bin/Runner.Worker.deps.json
+    expired_at: 2026-12-31
+    statement: >-
+      Microsoft.AspNetCore.WebUtilities 8.0.25 bundled in the self-contained
+      actions/runner 2.338.2 (latest release). Not patchable in our image.
+      Track actions/runner#4757, bump RUNNER_VERSION, then drop this entry.
